@@ -284,6 +284,11 @@ def open_link(body: dict) -> dict:
     return {"ok": True}
 
 
+def focus(_: dict) -> dict:
+    from . import window
+    return {"ok": window.bring_to_front()}
+
+
 def ping(_: dict) -> dict:
     HEART.ping()
     return {"ok": True}
@@ -317,6 +322,7 @@ POST_ROUTES = {
     "/api/backups/prune": prune_backups,
     "/api/open-folder": open_folder,
     "/api/open": open_link,
+    "/api/focus": focus,
     "/api/ping": ping,
     "/api/bye": bye,
 }

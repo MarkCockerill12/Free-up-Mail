@@ -19,7 +19,9 @@ Get one file from the [latest release](https://github.com/MarkCockerill12/Free-u
 | `FreeUpMail-linux` | Linux | nothing |
 | `FreeUpMail.pyz` | any of the above | [Python 3.11+](https://www.python.org/downloads/) |
 
-Free(up)Mail opens in its own window, and closing the window stops it completely. The first time it runs, a welcome screen and a short guided tour show you around; you can open the tour again from the **?** button.
+Free(up)Mail opens in its own window, and closing the window stops it completely. On Windows and macOS this is a native window inside the app itself, drawn with the system's built-in web engine (WebView2 on Windows, WebKit on macOS). Nothing else opens: no browser, no browser profile and no extensions. It uses about 200 MB of memory. On Linux, or if that engine is missing, it opens in an Edge or Chrome app window instead, also without extensions, sync or sign-in.
+
+The first time it runs, a welcome screen and a short guided tour show you around; you can open the tour again from the **?** button.
 
 **First run on each system:**
 - **Windows:** SmartScreen may warn about an unrecognised app because the exe isn't code-signed. Click **More info → Run anyway**.
@@ -160,7 +162,7 @@ python -m freeupmail --demo       # made-up mailboxes to try it out
 python -m freeupmail --browser    # in your normal browser (Ctrl+C to stop)
 ```
 
-On Windows, `FreeUpMail.bat` starts it without a console window.
+On Windows, `FreeUpMail.bat` starts it without a console window. Running from source opens a browser app window unless you `pip install pywebview`, which switches it to the native window.
 
 The tests use fake Gmail, IMAP and Outlook servers, so they never touch a real mailbox:
 

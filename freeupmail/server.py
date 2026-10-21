@@ -35,13 +35,15 @@ from . import (
     jobs,  # noqa: F401 - importing it adds its routes to api
     providers,
     store,
+    window,
 )
 
 PORTS = range(8765, 8786)
 # Read through importlib.resources so the page also loads from inside a .pyz or an .exe.
 WEB_DIR = resources.files("freeupmail") / "web"
 LOG_PATH = store.APP_DIR / "freeupmail.log"
-WINDOW_PROFILE = store.APP_DIR / "app-window"
+WINDOW_PROFILE = store.APP_DIR / "app-window"  # fallback Edge/Chrome window
+WEBVIEW_DATA = store.APP_DIR / "window"  # the native window's own storage
 SESSION_PATH = store.APP_DIR / "session.json"
 TOKEN = secrets.token_urlsafe(24)
 CONTENT_TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",
@@ -57,6 +59,15 @@ BROWSERS = [
     "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
     "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser",
 ]
+EDGE_FEATURES_OFF = ("msImplicitSignin", "msEdgeSyncConsent", "Translate", "OptimizationHints", "MediaRouter",
+                     "msShoppingAssistant", "msEdgeCollections", "msWebAssist", "SpareRendererForSitePerProcess",
+                     "AutofillServerCommunication")
+# None of the browser's background services: they only cost memory in a single-page app.
+# Software drawing (--disable-gpu) halves the engine's memory (measured ~410 -> ~210 MB)
+# and is plenty fast for lists and emails.
+LEAN_ARGS = ("--disable-gpu", "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
+             "--disable-breakpad", "--no-pings", "--renderer-process-limit=2",
+             "--disable-features=" + ",".join(EDGE_FEATURES_OFF))
 allowed_hosts: set[str] = set()
 
 
@@ -177,6 +188,17 @@ class Server(ThreadingHTTPServer):
 
 # ---------- launcher ----------
 
+def _focus_running(url: str) -> bool:
+    """Ask an already-open Free(up)Mail to bring its own window to the front."""
+    base, key = url.split("/#t=")
+    req = urllib.request.Request(f"{base}/api/focus", b"{}", {"X-FreeUpMail": key, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return bool(json.load(resp).get("ok"))
+    except (OSError, ValueError):
+        return False
+
+
 def already_running() -> str | None:
     """Address (with key) of a Free(up)Mail this user already has open, if any."""
     try:
@@ -277,8 +299,9 @@ def open_window(url: str) -> subprocess.Popen | None:
         browser, f"--app={url}", f"--user-data-dir={WINDOW_PROFILE}", f"--window-size={w},{h}",
         f"--window-position={x},{y}", "--no-first-run", "--no-default-browser-check",
         # A private window just for this app: no browser extensions (they could read your
-        # email on screen), no sync and no automatic sign-in to a browser profile.
-        "--disable-extensions", "--disable-sync", "--disable-features=msImplicitSignin,msEdgeSyncConsent",
+        # email on screen), no sync and no automatic sign-in to a browser profile...
+        "--disable-extensions", "--disable-sync",
+        *LEAN_ARGS,
     ])
 
 
@@ -328,7 +351,7 @@ def main() -> None:
         sys.stdout = sys.stderr = open(LOG_PATH, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
     running = already_running()
     if running:
-        if app_mode:
+        if app_mode and not _focus_running(running):
             open_window(running)
         elif "--no-browser" not in sys.argv:
             webbrowser.open(running)
@@ -344,7 +367,12 @@ def main() -> None:
     try:
         if app_mode:
             threading.Thread(target=server.serve_forever, daemon=True).start()
-            wait_until_closed(open_window(url), time.time())
+            bounds = window_bounds(work_area())
+            if window.available() and window.run(url, bounds, str(WEBVIEW_DATA), " ".join(LEAN_ARGS)):
+                while api.JOB.running:  # closed mid-scan/cleanup: finish it quietly first
+                    time.sleep(1)
+            else:
+                wait_until_closed(open_window(url), time.time())
             print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} window closed, stopping", flush=True)
             server.shutdown()
             return

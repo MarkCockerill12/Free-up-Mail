@@ -34,7 +34,7 @@ html[data-theme=aero] {
   --chip-bg: #f2f8fd; --chip-line: #b9d0e3; --chip-fg: #22405c;
   --scroll-track: rgba(255, 255, 255, .5); --scroll-thumb: linear-gradient(90deg, #f4f4f4, #dcdcdc 50%, #cfcfcf 51%, #e8e8e8); --scroll-thumb-line: #9a9a9a;
   --tab-accent: #3b9be0; --splitter-hover: rgba(255, 255, 255, .5); --check: #2a8bd6;
-  --glass: blur(14px) saturate(1.3);
+  --glass: none; /* a blur over a smooth gradient looks the same and costs drawing time */
 }
 html[data-theme=aero] .main, html[data-theme=aero] .preview, html[data-theme=aero] .statusbar, html[data-theme=aero] .splitter {
   background: rgba(240, 248, 255, .3); backdrop-filter: var(--glass);

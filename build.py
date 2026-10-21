@@ -2,7 +2,8 @@
 
   FreeUpMail.pyz   any OS with Python 3.11+: double-click it, or `python FreeUpMail.pyz`
   FreeUpMail(.exe) a standalone app for the OS it is built on, no Python needed
-                   (needs `pip install pyinstaller`)
+                   (needs `pip install pyinstaller`; with `pip install pywebview` too it opens
+                   in its own native window instead of a browser app window)
 
 python build.py [pyz] [exe]   (default: both)
 """

@@ -37,8 +37,11 @@ jobs:
           python -m tests.test_cleanup
           python -m tests.test_server
       - name: Build
+        shell: bash
         run: |
           pip install pyinstaller
+          # The app's own native window (WebView2 / WebKit); Linux builds use a browser window instead.
+          if [ "$RUNNER_OS" != "Linux" ]; then pip install pywebview; fi
           python build.py exe pyz
       - name: Rename
         shell: bash
