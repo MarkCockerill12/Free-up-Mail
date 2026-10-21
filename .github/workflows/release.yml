@@ -1,0 +1,56 @@
+name: Release builds
+
+# Publishing a GitHub release builds the single-file apps for every OS and attaches them.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            built: dist/FreeUpMail.exe
+            asset: FreeUpMail-windows.exe
+          - os: macos-latest
+            built: dist/FreeUpMail
+            asset: FreeUpMail-macos
+          - os: ubuntu-latest
+            built: dist/FreeUpMail
+            asset: FreeUpMail-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Tests
+        run: |
+          python -m tests.test_rules
+          python -m tests.test_cleanup
+      - name: Build
+        run: |
+          pip install pyinstaller
+          python build.py exe pyz
+      - name: Rename
+        shell: bash
+        run: mv "${{ matrix.built }}" "dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files="dist/${{ matrix.asset }}"
+          if [ "$RUNNER_OS" = "Linux" ]; then files="$files dist/FreeUpMail.pyz"; fi
+          gh release upload "${{ github.event.release.tag_name }}" $files --clobber

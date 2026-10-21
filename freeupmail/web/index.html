@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Free(up)Mail</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="/static/icon.ico">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="taskpane" id="sidebar">
+      <div class="pane-title"><span>Free(up)Mail</span><button data-collapse="left" title="Hide this pane">«</button></div>
+      <div class="tp-scroll">
+        <div class="tp-panel" data-panel="accounts">
+          <button class="tp-head" type="button">Accounts<span class="chev"></span></button>
+          <nav class="tp-body nav" id="nav-accounts"></nav>
+        </div>
+        <div class="tp-panel" data-panel="view">
+          <button class="tp-head" type="button">View<span class="chev"></span></button>
+          <nav class="tp-body nav" id="nav-views">
+            <button data-view="senders">👥 Senders</button>
+            <button data-view="emails">✉️ All emails</button>
+          </nav>
+        </div>
+        <div class="tp-panel" data-panel="status">
+          <button class="tp-head" type="button">Show<span class="chev"></span></button>
+          <nav class="tp-body nav" id="nav-status"></nav>
+        </div>
+        <div class="tp-panel" data-panel="cat">
+          <button class="tp-head" type="button">Category<span class="chev"></span></button>
+          <nav class="tp-body nav" id="nav-cat"></nav>
+        </div>
+      </div>
+    </aside>
+    <div class="splitter" data-split="left" title="Drag to resize · double-click to hide">
+      <button class="rail-btn" data-expand="left" title="Show the task pane">»</button>
+    </div>
+
+    <section class="main">
+      <div class="toolbar">
+        <button class="tb" id="btn-pane-left" title="Show or hide the task pane"><span class="ico">📁</span>Task pane</button>
+        <span class="tb-sep"></span>
+        <button class="tb" id="btn-review" title="Go through senders one at a time"><span class="ico">🔎</span>Review</button>
+        <button class="tb" id="btn-cleanup" title="Move everything marked delete to Trash"><span class="ico">🗑️</span><span id="cleanup-label">Clean up</span></button>
+        <button class="tb" id="btn-scan" title="Re-read the mailboxes"><span class="ico">🔄</span>Rescan</button>
+        <span class="tb-sep"></span>
+        <button class="tb" id="btn-filters" title="Make your mail provider bin future junk by itself"><span class="ico">📮</span>Filters</button>
+        <button class="tb" id="btn-settings" title="What is always kept"><span class="ico">🛡️</span>Protection</button>
+        <button class="tb" id="btn-accounts" title="Add or fix accounts"><span class="ico">👤</span>Accounts</button>
+        <span class="tb-sep"></span>
+        <button class="tb" id="btn-pane-right" title="Show or hide the preview pane"><span class="ico">🪟</span>Preview</button>
+        <button class="tb" id="btn-help" title="Keyboard shortcuts"><span class="ico">❔</span>Help</button>
+      </div>
+      <div class="addressbar">
+        <label class="lbl" for="q">Search</label>
+        <input class="search" id="q" type="search" placeholder="sender, domain or subject  ( / )">
+        <span class="ab-sep"></span>
+        <span id="group" class="lbl">Group by
+          <label><input type="radio" name="group" value="sender" checked> Sender</label>
+          <label><input type="radio" name="group" value="domain"> Domain</label>
+        </span>
+        <label id="lbl-unsub"><input type="checkbox" id="unsub-only"> Mailing lists only</label>
+        <label><input type="checkbox" id="inbox-only"> Still in inbox</label>
+        <label id="lbl-unread" hidden><input type="checkbox" id="unread-only"> Unread only</label>
+        <label id="lbl-min">At least&nbsp;<input type="number" id="min" value="1" min="1">&nbsp;emails</label>
+      </div>
+      <section class="bulk" id="bulk" hidden></section>
+      <div class="listview" id="list-wrap">
+        <table id="list"><thead></thead><tbody></tbody></table>
+        <div class="more" id="more"></div>
+      </div>
+    </section>
+
+    <div class="splitter" data-split="right" title="Drag to resize · double-click to hide">
+      <button class="rail-btn" data-expand="right" title="Show the preview pane">«</button>
+    </div>
+    <aside class="preview idle" id="detail">
+      <div class="pane-title"><span id="detail-title">Preview</span><button data-collapse="right" title="Hide this pane">»</button></div>
+      <div class="preview-body" id="detail-body"></div>
+    </aside>
+
+    <footer class="statusbar" id="stats"></footer>
+  </div>
+
+  <div class="review-mode" id="review" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+  <section class="joblog xp-window" id="joblog" hidden>
+    <div class="xp-title"><span id="job-title">Working…</span><button class="xp-close" id="job-close" title="Hide">✕</button></div>
+    <pre id="job-lines"></pre>
+  </section>
+  <div class="offline" id="offline" hidden>
+    <div class="xp-window"><div class="xp-title">Free(up)Mail</div>
+      <div class="content">Free(up)Mail has been closed. Open it again to carry on.</div></div>
+  </div>
+  <dialog id="modal"><form method="dialog" id="modal-body"></form></dialog>
+
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
