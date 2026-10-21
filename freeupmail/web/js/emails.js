@@ -40,7 +40,8 @@ function rowHtml(m) {
     <td><input type="checkbox" class="pick" ${picked ? "checked" : ""}></td>
     <td><span class="pill ${m.status}" title="${esc(reason)}">${STATUS_LABEL[m.status] || m.status}</span></td>
     <td class="who"><div class="name">${esc(m.from_name || m.from_addr || "(no sender)")}</div><small>${esc(m.from_addr)}</small></td>
-    <td class="subj">${m.kind ? `<span class="chip ${m.kind}">${KIND_LABEL[m.kind]}</span>` : ""}${m.pinned ? '<span class="chip pinned">pinned</span>' : ""}${esc(m.subject || "(no subject)")}</td>
+    <td class="subj">${m.status === "trashed" ? `<span class="chip ${m.backup ? "ok" : ""}" title="${m.backup
+       ? "A copy is saved on this computer: restorable even after the Trash is emptied" : "No backup: restorable while it is in Trash"}">${m.backup ? "💾 backed up" : "no backup"}</span>` : ""}${m.kind ? `<span class="chip ${m.kind}">${KIND_LABEL[m.kind]}</span>` : ""}${m.pinned ? '<span class="chip pinned">pinned</span>' : ""}${m.by_rule ? '<span class="chip rule">kept by rule</span>' : ""}${esc(m.subject || "(no subject)")}</td>
     <td>${esc(m.status === "trashed" ? (m.trashed_at || "").slice(0, 10) : m.date)}</td>
     ${ui.account ? "" : `<td class="muted">${esc(short(m.account))}</td>`}
   </tr>`;
@@ -52,7 +53,7 @@ export function renderEmails() {
   $("#list tbody").innerHTML = items.length
     ? items.map(rowHtml).join("")
     : `<tr><td colspan="6" class="empty">${loading ? "Loading…" : ui.status === "trashed"
-      ? "Nothing in Trash from Free(up)Mail." : "No emails match these filters."}</td></tr>`;
+      ? "Nothing deleted by Free(up)Mail yet. Emails you clean up appear here, ready to restore." : "No emails match these filters."}</td></tr>`;
   const more = $("#more");
   more.innerHTML = `${fmt(items.length)} of ${fmt(total)} emails`
     + (items.length < total ? ' <button id="load-more">Load more</button>' : "");
@@ -61,7 +62,7 @@ export function renderEmails() {
 }
 
 export function emailStats() {
-  if (ui.status === "trashed") return [[fmt(ui.emails.total), "in Trash (restorable)"]];
+  if (ui.status === "trashed") return [[fmt(ui.emails.total), "deleted by Free(up)Mail, restorable"]];
   const c = ui.emails.counts || {};
   return [
     [fmt(c.all), "emails"],

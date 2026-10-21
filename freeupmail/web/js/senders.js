@@ -16,13 +16,26 @@ export function renderSenders() {
   ui.visible = rows;
   $("#list tbody").innerHTML = rows.length
     ? rows.slice(0, RENDER_LIMIT).map(rowHtml).join("")
-    : `<tr><td colspan="7" class="empty">No senders match these filters.</td></tr>`;
+    : `<tr><td colspan="7" class="empty">${emptyText()}</td></tr>`;
   $("#more").textContent = rows.length > RENDER_LIMIT
     ? `Showing ${RENDER_LIMIT} of ${fmt(rows.length)} — search or filter to narrow it down.`
     : `${fmt(rows.length)} ${ui.group === "domain" ? "domains" : "senders"}`;
   const all = $("#check-all");
   if (all) all.checked = rows.length > 0 && rows.slice(0, RENDER_LIMIT).every((g) => ui.selected.has(g.key));
   return rows;
+}
+
+function emptyText() {
+  if (!ui.accounts.length) {
+    return `<h3>No accounts yet</h3>Connect a mailbox to start. Free(up)Mail talks to it straight from this computer,
+      and only does what you allow.<br><button class="primary" data-empty="accounts">Add an account</button>
+      <button data-empty="tour">Take the tour</button>`;
+  }
+  if (!ui.senders.length) {
+    return `<h3>Nothing scanned yet</h3>Press <b>Rescan</b> to list your emails (sender, subject and date).
+      <br><button class="primary" data-empty="scan">Rescan now</button>`;
+  }
+  return "No senders match these filters.";
 }
 
 function rowHtml(g) {

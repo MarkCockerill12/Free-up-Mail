@@ -25,9 +25,6 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = "offline_access User.Read Mail.ReadWrite MailboxSettings.ReadWrite"
 TOKEN_PATH = store.APP_DIR / "outlook_token.json"
 SKIP_FOLDERS = ("deleteditems", "junkemail", "sentitems", "drafts", "outbox")
-RULE_PREFIX = "Free(up)Mail"
-OLD_RULE_PREFIXES = (RULE_PREFIX, "Mail Tidy")  # rules from before the rename are replaced too
-RULE_CHUNK = 40
 INLINE_IMAGE_LIMIT = 3_000_000
 CID_RE = re.compile(r"cid:([^\"'\s)>]+)", re.IGNORECASE)
 
@@ -139,6 +136,21 @@ def graph(method: str, path: str, body: dict | None = None) -> dict:
                 continue
             raise RuntimeError(f"Graph {method} {path} -> {exc.code}: {exc.read()[:300]!r}") from exc
     raise RuntimeError(f"Graph {method} {path}: throttled too long")
+
+
+def graph_raw(path: str) -> bytes:
+    """GET returning bytes (e.g. an email's MIME source from /$value)."""
+    for _ in range(5):
+        req = urllib.request.Request(GRAPH + path, headers={"Authorization": f"Bearer {_access_token()}"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code in (429, 503, 504):
+                time.sleep(int(exc.headers.get("Retry-After", 5)))
+                continue
+            raise RuntimeError(f"Graph GET {path} -> {exc.code}") from exc
+    raise RuntimeError(f"Graph GET {path}: throttled too long")
 
 
 def pages(path: str):
@@ -273,49 +285,3 @@ def fetch_message(msg_id: str) -> dict:
 
 
 # ---------- move / rules ----------
-
-def _move_batch(msg_ids: list[str], destination: str, log: Log, verb: str) -> dict[str, str]:
-    """Move messages 20 per Graph batch. Returns {old id: new id} for those moved."""
-    moved: dict[str, str] = {}
-    for i in range(0, len(msg_ids), 20):
-        chunk = msg_ids[i : i + 20]
-        requests = [{
-            "id": str(n), "method": "POST", "url": f"/me/messages/{_quote(mid)}/move",
-            "body": {"destinationId": destination}, "headers": {"Content-Type": "application/json"},
-        } for n, mid in enumerate(chunk)]
-        result = graph("POST", "/$batch", {"requests": requests})
-        for resp in result.get("responses", []):
-            if resp.get("status") in (200, 201):
-                moved[chunk[int(resp["id"])]] = (resp.get("body") or {}).get("id", "")
-        if (i // 20) % 10 == 0 or i + 20 >= len(msg_ids):
-            log(f"  {verb} {len(moved)}/{len(msg_ids)}")
-    return moved
-
-
-def trash(msg_ids: list[str], log: Log) -> dict[str, str]:
-    return _move_batch(msg_ids, "deleteditems", log, "moved to Deleted Items")
-
-
-def restore(trashed_ids: list[str], log: Log) -> dict[str, str]:
-    return _move_batch(trashed_ids, "inbox", log, "restored")
-
-
-def apply_rules(addrs: list[str], protect_words: list[str], log: Log) -> None:
-    """Replace the 'Free(up)Mail N' inbox rules with ones moving these senders to Deleted Items."""
-    for rule in pages("/me/mailFolders/inbox/messageRules"):
-        if rule.get("displayName", "").startswith(OLD_RULE_PREFIXES):
-            graph("DELETE", f"/me/mailFolders/inbox/messageRules/{rule['id']}")
-    deleted = _folder_id("deleteditems")
-    chunks = [addrs[i : i + RULE_CHUNK] for i in range(0, len(addrs), RULE_CHUNK)]
-    for n, chunk in enumerate(chunks, 1):
-        rule = {
-            "displayName": f"{RULE_PREFIX} {n}",
-            "sequence": 100 + n,
-            "isEnabled": True,
-            "conditions": {"senderContains": chunk},
-            "actions": {"moveToFolder": deleted, "stopProcessingRules": True},
-        }
-        if protect_words:
-            rule["exceptions"] = {"subjectContains": protect_words}
-        graph("POST", "/me/mailFolders/inbox/messageRules", rule)
-        log(f"  rule {n}/{len(chunks)} created ({len(chunk)} senders)")

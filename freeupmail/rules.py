@@ -55,6 +55,10 @@ DEFAULT_SETTINGS = {
     "keep_security": "all",  # all | 90d | none
     "keep_receipts": "1",
     "keep_shipping": "1",
+    "backup": "1",  # save a local copy of every email before it goes to Trash
+    "auto_rules": "1",  # after each scan, run the rules marked "run automatically"
+    "theme": "xp",  # xp | win10 | aero | minimal | dark
+    "welcome_done": "0",
 }
 
 

@@ -1,0 +1,51 @@
+/* Vista / Windows 7 "Frutiger Aero": sky-to-grass backdrop, frosted glass panes,
+   glossy buttons and aqua selection. */
+html[data-theme=aero] {
+  --font: 12px/1.45 "Segoe UI", system-ui, sans-serif;
+  --title-font: 13px "Segoe UI", system-ui, sans-serif;
+  --face: rgba(236, 245, 252, .82); --face-dark: #c9dbea; --shadow: #a7c0d6; --white: #ffffff; --hi: rgba(255, 255, 255, .8);
+  --text: #0b1f33; --text-2: #1e3348; --muted: #4f6a83; --link: #0b5fb0; --link-hover: #1a86e0; --h3: #11589c;
+  --select: linear-gradient(180deg, #e3f1fd, #c3e0fb); --select-fg: #0b1f33; --select-soft: #e8f4fe; --field-border: #8fb0cc;
+  --cursor-bg: linear-gradient(180deg, #dcecfc, #c1dbfc); --cursor-fg: #0b1f33; --cursor-sub: #2c4a66;
+  --row-hover: #eef7ff; --row-line: #e8f0f7;
+  --app-bg: radial-gradient(ellipse at 15% 110%, #7ccf8e 0%, transparent 45%),
+            radial-gradient(ellipse at 85% 105%, #5cbf74 0%, transparent 40%),
+            linear-gradient(180deg, #5fb4ec 0%, #a9dcfb 38%, #e3f6ff 62%, #bfe8c6 82%, #8fd39c 100%);
+  --tp-bg: linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .08));
+  --tp-title-bg: linear-gradient(180deg, rgba(255,255,255,.85), rgba(205,229,250,.75) 50%, rgba(178,213,243,.75) 51%, rgba(214,236,255,.8));
+  --tp-title-fg: #0b2a4a; --tp-title-shadow: 0 0 6px #fff;
+  --tp-head-bg: linear-gradient(180deg, rgba(255,255,255,.95), rgba(222,239,252,.9)); --tp-head-fg: #0b4f8f;
+  --tp-body: rgba(255, 255, 255, .6); --tp-body-line: rgba(255, 255, 255, .9); --tp-radius: 6px 6px 0 0;
+  --title: linear-gradient(180deg, rgba(255,255,255,.8) 0%, rgba(214,234,251,.7) 48%, rgba(171,208,240,.75) 50%, rgba(205,229,250,.85) 100%);
+  --title-fg: #0b2a4a; --title-shadow: 0 0 8px rgba(255, 255, 255, .95); --title-h: 30px;
+  --window-line: rgba(40, 80, 130, .65); --window-radius: 8px; --window-shadow: 0 10px 34px rgba(10, 40, 80, .45), inset 0 0 0 1px rgba(255,255,255,.6);
+  --close-bg: linear-gradient(180deg, #e8a493 0%, #d9654b 48%, #c43c1f 50%, #d76a4c 100%);
+  --close-fg: #ffffff; --close-line: #6d2a1c; --close-radius: 3px;
+  --btn: linear-gradient(180deg, #f2f2f2 0%, #ebebeb 49%, #dddddd 50%, #cfcfcf 100%);
+  --btn-down: linear-gradient(180deg, #e5f4fc 0%, #c4e5f6 49%, #98d1ef 50%, #68b3db 100%);
+  --btn-line: #707070; --btn-radius: 3px; --btn-fg: #0b1f33;
+  --hot: inset 0 0 0 1px rgba(255,255,255,.8), 0 0 6px rgba(60, 160, 230, .55);
+  --hot-bg: linear-gradient(180deg, #eaf6fd 0%, #d9f0fc 49%, #bee6fd 50%, #a7d9f5 100%);
+  --primary-ring: inset 0 0 0 1px #3c7fb1, 0 0 5px rgba(60, 160, 230, .5);
+  --tb-hover-bg: linear-gradient(180deg, rgba(255,255,255,.9), rgba(214,236,255,.85) 50%, rgba(188,222,250,.85) 51%, rgba(220,240,255,.9));
+  --tb-hover-line: #8fb6d8; --tb-on-bg: linear-gradient(180deg, #d6ebfb, #b9dcf8);
+  --th-bg: linear-gradient(180deg, #ffffff 0%, #f3f8fc 50%, #e6f0f8 51%, #f5f9fd 100%); --th-line: #c4d6e5; --th-hover: inset 0 0 0 100px rgba(200, 228, 250, .6);
+  --head-bg: linear-gradient(180deg, #ffffff, #eef6fd);
+  --chip-bg: #f2f8fd; --chip-line: #b9d0e3; --chip-fg: #22405c;
+  --scroll-track: rgba(255, 255, 255, .5); --scroll-thumb: linear-gradient(90deg, #f4f4f4, #dcdcdc 50%, #cfcfcf 51%, #e8e8e8); --scroll-thumb-line: #9a9a9a;
+  --tab-accent: #3b9be0; --splitter-hover: rgba(255, 255, 255, .5); --check: #2a8bd6;
+  --glass: blur(14px) saturate(1.3);
+}
+html[data-theme=aero] .main, html[data-theme=aero] .preview, html[data-theme=aero] .statusbar, html[data-theme=aero] .splitter {
+  background: rgba(240, 248, 255, .3); backdrop-filter: var(--glass);
+}
+html[data-theme=aero] .listview, html[data-theme=aero] .preview-body { background: rgba(255, 255, 255, .92); }
+html[data-theme=aero] th { background: linear-gradient(180deg, rgba(255,255,255,.95) 0%, rgba(243,248,252,.95) 50%, rgba(230,240,248,.95) 51%, rgba(245,249,253,.95) 100%); }
+html[data-theme=aero] .toolbar { background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(220,238,252,.55) 50%, rgba(200,226,248,.55) 51%, rgba(232,244,255,.65)); }
+html[data-theme=aero] .listview, html[data-theme=aero] .preview-body { box-shadow: 0 1px 6px rgba(20, 60, 100, .18); }
+html[data-theme=aero] .tp-panel { box-shadow: 0 2px 8px rgba(20, 60, 100, .2); }
+html[data-theme=aero] .nav button.on { border: 1px solid #7da2ce !important; border-radius: 3px; }
+html[data-theme=aero] dialog, html[data-theme=aero] .xp-window { background: rgba(225, 240, 252, .88); backdrop-filter: var(--glass); }
+html[data-theme=aero] dialog .content, html[data-theme=aero] .tour-card .content { background: linear-gradient(180deg, #f9fcff, #eaf4fc); border-top: 1px solid rgba(255,255,255,.9); }
+html[data-theme=aero] button.primary { background: linear-gradient(180deg, #eaf6fd 0%, #d9f0fc 49%, #bee6fd 50%, #a7d9f5 100%); border-color: #3c7fb1; }
+html[data-theme=aero] .progress div { background: linear-gradient(180deg, #a9f5a0, #39c235 50%, #22a51e 51%, #6fdc68); }

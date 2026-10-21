@@ -9,6 +9,7 @@ while the folder keeps its UIDVALIDITY, so an id can never point at a different 
 import base64
 import email
 import email.policy
+import email.utils
 import imaplib
 import re
 import threading
@@ -195,20 +196,6 @@ def message_ids(imap: imaplib.IMAP4, uids: list) -> dict[int, str]:
     return found
 
 
-def move(imap: imaplib.IMAP4, uids: list[int], dest: str) -> None:
-    seq = ",".join(map(str, uids))
-    if "MOVE" in imap.capabilities:
-        typ, resp = imap.uid("MOVE", seq, quote(dest))
-    else:
-        typ, resp = imap.uid("COPY", seq, quote(dest))
-        if typ == "OK":
-            imap.uid("STORE", seq, "+FLAGS.SILENT", "(\\Deleted)")
-            if "UIDPLUS" in imap.capabilities:  # never a plain EXPUNGE: it would purge other deleted mail too
-                imap.uid("EXPUNGE", seq)
-    if typ != "OK":
-        raise RuntimeError(f"moving to {dest} failed: {resp}")
-
-
 def make_id(validity: int, uid: int, folder: str) -> str:
     return f"imap:{validity}:{uid}:{folder}"
 
@@ -379,57 +366,3 @@ def web_link(account: dict, rfc_id: str) -> str:
 
 
 # ---------- trash / restore ----------
-
-def trash(account: dict, items: dict[str, int], log: Log = print) -> dict[str, str]:
-    """Move {msg_id: uid} to Trash. Returns {msg_id: Message-ID} for what moved; the
-    Message-ID is how restore finds it again inside Trash."""
-    by_folder: dict[tuple[str, int], list[int]] = {}
-    for msg_id in items:
-        validity, uid, folder = parse_id(msg_id)
-        by_folder.setdefault((folder, validity), []).append(uid)
-    imap = login(account)
-    moved: dict[str, str] = {}
-    try:
-        trash_folder = find_folder(imap, b"\\Trash")
-        if "MOVE" not in imap.capabilities and "UIDPLUS" not in imap.capabilities:
-            log("  this server can't move emails directly: they are copied to Trash and flagged deleted")
-        for (folder, validity), uids in by_folder.items():
-            if select(imap, folder) != validity:
-                log(f"  {folder} changed since the last scan; {len(uids)} skipped (rescan first)")
-                continue
-            for i in range(0, len(uids), BATCH):
-                found = message_ids(imap, uids[i : i + BATCH])  # only uids that still exist
-                if found:
-                    move(imap, list(found), trash_folder)
-                    moved.update({make_id(validity, u, folder): rfc for u, rfc in found.items()})
-                log(f"  trashed {len(moved)}/{len(items)}")
-    finally:
-        imap.logout()
-    return moved
-
-
-def restore(account: dict, rfc_ids: list[str], log: Log = print) -> dict[str, str]:
-    """Move messages (by Message-ID) from Trash back to the Inbox.
-    Returns {Message-ID: new id in the Inbox}."""
-    wanted = {r for r in rfc_ids if r}
-    imap = login(account)
-    try:
-        select(imap, find_folder(imap, b"\\Trash"))
-        found = {u: rfc for u, rfc in message_ids(imap, search_uids(imap, "ALL")).items() if rfc in wanted}
-        missing = len(wanted - set(found.values()))
-        if missing:
-            log(f"  {missing} no longer in Trash (emptied or deleted by hand)")
-        if not found:
-            return {}
-        _, status = imap.status("INBOX", "(UIDNEXT UIDVALIDITY)")
-        before = dict(NUM_RE.findall(status[0]))
-        uids = list(found)
-        for i in range(0, len(uids), BATCH):
-            move(imap, uids[i : i + BATCH], "INBOX")
-            log(f"  restored {min(i + BATCH, len(uids))}/{len(uids)}")
-        validity = select(imap, "INBOX", readonly=True)
-        start = int(before[b"UIDNEXT"]) if int(before[b"UIDVALIDITY"]) == validity else 1
-        arrived = message_ids(imap, search_uids(imap, f"UID {start}:*"))
-        return {rfc: make_id(validity, u, "INBOX") for u, rfc in arrived.items() if rfc in wanted}
-    finally:
-        imap.logout()

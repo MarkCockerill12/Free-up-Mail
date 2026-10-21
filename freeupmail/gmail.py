@@ -3,7 +3,7 @@ its categories (Promotions, Social...) and X-GM-MSGID ids, which survive moves."
 
 import re
 
-from . import imapmail, store
+from . import imapmail, imapwrite, store
 from .imapmail import BATCH, FLAGS_RE, UID_RE, Log, find_folder, search_uids, select
 
 HOST = imapmail.GOOGLE[0]
@@ -79,9 +79,15 @@ def _msgids(imap, uids: list) -> dict[str, str]:
     return found
 
 
-def trash(account: dict, items: dict[str, int], log: Log = print) -> dict[str, str]:
-    """Move {msgid: uid} from All Mail to Trash. A message only moves when its
-    X-GM-MSGID still matches the cached one. Returns {msgid: msgid} for what moved."""
+def _confirmed(imap, items: dict[str, int], uids: list[str]) -> dict[str, str]:
+    """{uid: msgid} for the uids whose X-GM-MSGID still matches the cached one."""
+    return {u: m for u, m in _msgids(imap, uids).items() if items.get(m) == int(u)}
+
+
+def trash(account: dict, items: dict[str, int], log: Log = print, keep=None) -> dict[str, str]:
+    """Move {msgid: uid} from All Mail to Trash. A message only moves when its X-GM-MSGID
+    still matches the cached one and (with `keep`) its backup copy is saved.
+    Returns {msgid: msgid} for what moved."""
     imap = imapmail.login(account)
     moved: dict[str, str] = {}
     try:
@@ -89,14 +95,55 @@ def trash(account: dict, items: dict[str, int], log: Log = print) -> dict[str, s
         trash_folder = find_folder(imap, b"\\Trash")
         uids = [str(u) for u in items.values()]
         for i in range(0, len(uids), BATCH):
-            confirmed = {u: m for u, m in _msgids(imap, uids[i : i + BATCH]).items() if items.get(m) == int(u)}
-            if confirmed:
-                imapmail.move(imap, list(confirmed), trash_folder)
-                moved.update({m: m for m in confirmed.values()})
+            confirmed = _confirmed(imap, items, uids[i : i + BATCH])
+            ok = imapwrite.backed_up(imap, [int(u) for u in confirmed], lambda u, c=confirmed: c[str(u)], keep, log)
+            if ok:
+                imapwrite.move(imap, ok, trash_folder)
+                moved.update({confirmed[str(u)]: confirmed[str(u)] for u in ok})
             log(f"  trashed {len(moved)}/{len(uids)}")
     finally:
         imap.logout()
     return moved
+
+
+upload = imapwrite.upload
+
+
+def _label(name: str) -> str:
+    return "(" + imapmail.quote(name) + ")"
+
+
+def organise(account: dict, action: str, items: dict[str, int], folder: str = "",
+             mark_read: bool = False, log: Log = print) -> int:
+    """Rule actions in Gmail terms: "move" adds the label and takes the email out of the
+    Inbox (Gmail's own Move to), "archive" only takes it out of the Inbox."""
+    imap = imapmail.login(account)
+    done = 0
+    try:
+        label = imapwrite.ensure_folder(imap, folder) if action == "move" else ""
+        junk = find_folder(imap, b"\\Junk") if action == "junk" else ""
+        select(imap, find_folder(imap, b"\\All"))
+        uids = [str(u) for u in items.values()]
+        for i in range(0, len(uids), BATCH):
+            confirmed = list(_confirmed(imap, items, uids[i : i + BATCH]))
+            if not confirmed:
+                continue
+            seq = ",".join(confirmed)
+            if mark_read or action == "read":
+                imap.uid("STORE", seq, "+FLAGS.SILENT", "(\\Seen)")
+            if action == "star":
+                imap.uid("STORE", seq, "+FLAGS.SILENT", "(\\Flagged)")
+            if label:
+                imap.uid("STORE", seq, "+X-GM-LABELS", _label(label))
+            if action in ("move", "archive"):
+                imap.uid("STORE", seq, "-X-GM-LABELS", "(\\Inbox)")
+            if junk:
+                imapwrite.move(imap, confirmed, junk)
+            done += len(confirmed)
+        log(f"  {done} emails done")
+    finally:
+        imap.logout()
+    return done
 
 
 def restore(account: dict, msg_ids: list[str], log: Log = print) -> dict[str, str]:
@@ -113,7 +160,7 @@ def restore(account: dict, msg_ids: list[str], log: Log = print) -> dict[str, st
         keys = list(found)
         for i in range(0, len(keys), BATCH):
             chunk = keys[i : i + BATCH]
-            imapmail.move(imap, chunk, "INBOX")
+            imapwrite.move(imap, chunk, "INBOX")
             restored.update({found[u]: found[u] for u in chunk})
             log(f"  restored {len(restored)}/{len(found)}")
     finally:

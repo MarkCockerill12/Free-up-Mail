@@ -1,0 +1,38 @@
+/* Windows 10: flat, white and light grey, Segoe UI, blue accent. */
+html[data-theme=win10] {
+  --font: 12px/1.45 "Segoe UI", system-ui, sans-serif;
+  --title-font: 12px "Segoe UI", system-ui, sans-serif;
+  --face: #f0f0f0; --face-dark: #e5e5e5; --shadow: #d9d9d9; --hi: transparent;
+  --text: #000000; --text-2: #1f1f1f; --muted: #6d6d6d; --link: #0066b4; --link-hover: #0078d7; --h3: #0063b1;
+  --select: #cce8ff; --select-fg: #000000; --select-soft: #e5f3ff; --field-border: #7a7a7a;
+  --cursor-bg: #cce8ff; --cursor-fg: #000000; --cursor-sub: #333333;
+  --row-hover: #e5f3ff; --row-line: #f3f3f3;
+  --note-bg: #fff8e1; --note-line: #f0d98c;
+  --tp-bg: #f3f3f3; --tp-title-bg: #ffffff; --tp-title-fg: #000000; --tp-title-shadow: none;
+  --tp-head-bg: transparent; --tp-head-fg: #000000; --tp-body: transparent; --tp-body-line: transparent; --tp-radius: 0;
+  --title: #ffffff; --title-fg: #000000; --title-shadow: none; --title-h: 32px;
+  --window-line: #0078d7; --window-radius: 0; --window-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+  --close-bg: transparent; --close-fg: #000000; --close-line: transparent; --close-radius: 0;
+  --btn: #e1e1e1; --btn-down: #cce4f7; --btn-line: #adadad; --btn-radius: 0px; --btn-fg: #000000;
+  --hot: inset 0 0 0 1px #0078d7; --hot-bg: #e5f1fb; --primary-ring: inset 0 0 0 1px #0078d7;
+  --tb-hover-bg: #e5f3ff; --tb-hover-line: #cce8ff; --tb-on-bg: #cce8ff;
+  --th-bg: #ffffff; --th-line: #e5e5e5; --th-hover: inset 0 0 0 100px #d9ebf9;
+  --head-bg: #ffffff;
+  --chip-bg: #f3f3f3; --chip-line: #d9d9d9; --chip-fg: #333333;
+  --scroll-track: #f0f0f0; --scroll-thumb: #c2c2c2; --scroll-thumb-line: #c2c2c2;
+  --tab-accent: #0078d7; --splitter-hover: #e5e5e5; --check: #0078d7;
+}
+html[data-theme=win10] .taskpane { border-right: 1px solid #e5e5e5; }
+html[data-theme=win10] .tp-head { font-size: 13px; padding-left: 6px; }
+html[data-theme=win10] .tp-body { padding: 0 0 4px; }
+html[data-theme=win10] .chev { background: none; border: none; }
+html[data-theme=win10] .nav button { padding: 4px 8px; color: #000; }
+html[data-theme=win10] .nav button:hover { background: #e5f3ff; text-decoration: none; }
+html[data-theme=win10] .nav button.on { box-shadow: inset 3px 0 #0078d7 !important; }
+html[data-theme=win10] .xp-close { width: 44px; height: 30px; font-weight: normal; font-size: 14px; margin-right: -4px; }
+html[data-theme=win10] .xp-close:hover { background: #e81123; color: #fff; filter: none; }
+html[data-theme=win10] button.primary { background: #0078d7; color: #fff; border-color: #0078d7; }
+html[data-theme=win10] button.primary:hover:not(:disabled) { background: #106ebe; color: #fff; }
+html[data-theme=win10] .xp-title, html[data-theme=win10] dialog h2 { border-bottom: 1px solid #e5e5e5; }
+html[data-theme=win10] .sb-cell { border-color: transparent; border-right-color: #d9d9d9; }
+html[data-theme=win10] .tour-hole { box-shadow: 0 0 0 3px #0078d7; border-radius: 0; }

@@ -8,7 +8,7 @@ export const ui = {
   group: "sender",          // sender | domain
   q: "", unsubOnly: false, inboxOnly: false, unreadOnly: false, minCount: 1,
   sort: { key: "count", dir: -1 },
-  senders: [], groups: [], accounts: [], settings: {}, trashed: 0, plan: {},
+  senders: [], groups: [], accounts: [], settings: {}, trashed: 0, plan: {}, permLabels: {}, backups: null, demo: false,
   emails: { items: [], total: 0, loading: false },
   selected: new Set(), cursor: null, jobRunning: false,
 };
@@ -18,7 +18,10 @@ export const changed = () => listeners.forEach((fn) => fn());
 
 export async function loadState() {
   const st = await api("/api/state");
-  Object.assign(ui, { accounts: st.accounts, settings: st.settings, trashed: st.trashed });
+  Object.assign(ui, {
+    accounts: st.accounts, settings: st.settings, trashed: st.trashed, permLabels: st.perm_labels,
+    backups: st.backups, demo: st.demo, dataFolder: st.data_folder,
+  });
   return st;
 }
 

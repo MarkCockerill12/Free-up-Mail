@@ -1,4 +1,4 @@
-import { $, $$, api, debounce, esc, fmt, short, toast } from "./util.js";
+import { $, $$, KEY, api, debounce, esc, fmt, short, toast, withKey } from "./util.js";
 import {
   ui, listeners, loadState, loadSenders, buildGroups, baseGroups, matchesStatus, planTotal, setActions, membersFor,
 } from "./state.js";
@@ -6,14 +6,19 @@ import { sendersHead, renderSenders, senderStats } from "./senders.js";
 import { loadEmails, emailsHead, renderEmails, emailStats, emailKey } from "./emails.js";
 import { showSender, showEmail, closeDetail, decide } from "./detail.js";
 import { openReview } from "./review.js";
-import { settingsDialog, accountsDialog, cleanupDialog, filtersDialog, helpDialog } from "./dialogs.js";
+import { settingsDialog, cleanupDialog, helpMenu } from "./dialogs.js";
+import { accountsDialog } from "./accounts.js";
+import { rulesDialog } from "./rules.js";
+import { syncTheme, themeMenu } from "./theme.js";
+import { welcome, startTour } from "./tour.js";
 import { initLayout, setPane } from "./layout.js";
+import { screenshot } from "./shots.js";
 
 const narrow = () => window.innerWidth < 900;
 
 const SENDER_STATUS = [["all", "All senders"], ["DELETE", "Delete"], ["REVIEW", "Needs review"], ["KEEP", "Keep"], ["MANUAL", "Changed by me"]];
 const EMAIL_STATUS = [["all", "All emails"], ["delete", "Will be deleted"], ["protected", "Protected"], ["review", "Needs review"],
-  ["keep", "Keep"], ["pinned", "Pinned by me"], ["trashed", "In Trash"]];
+  ["keep", "Keep"], ["pinned", "Pinned by me"], ["trashed", "Deleted (restorable)"]];
 const CATEGORIES = [["", "Any"], ["promotions", "Promotions"], ["social", "Social"], ["updates", "Updates"],
   ["forums", "Forums"], ["other", "Outlook \"Other\""], ["none", "Primary / none"]];
 
@@ -28,7 +33,8 @@ function render() {
   const stats = senders ? senderStats(renderSenders()) : (renderEmails(), emailStats());
   const status = ui.jobRunning ? "Working…" : ui.selected.size ? `${fmt(ui.selected.size)} selected` : "Ready";
   $("#stats").innerHTML = `<div class="sb-cell grow">${status}</div>`
-    + stats.map(([v, l, c]) => `<div class="sb-cell ${c || ""}"><b>${v}</b> ${l}</div>`).join("");
+    + stats.map(([v, l, c]) => `<div class="sb-cell ${c || ""}"><b>${v}</b> ${l}</div>`).join("")
+    + '<div class="sb-cell local" title="No Free(up)Mail servers: it talks straight to your email providers">🔒 Runs on this computer</div>';
   $$("th[data-sort]").forEach((th) => {
     th.classList.toggle("sorted", th.dataset.sort === ui.sort.key);
     th.classList.toggle("asc", ui.sort.dir === 1);
@@ -230,9 +236,10 @@ function wire() {
     await reloadList();
   });
   $("#btn-settings").onclick = settingsDialog;
-  $("#btn-filters").onclick = filtersDialog;
+  $("#btn-rules").onclick = () => rulesDialog();
   $("#btn-accounts").onclick = () => accountsDialog();
-  $("#btn-help").onclick = helpDialog;
+  $("#btn-theme").onclick = () => themeMenu($("#btn-theme"));
+  $("#btn-help").onclick = () => helpMenu($("#btn-help"), () => startTour(), welcome);
   $("#btn-review").onclick = () => openReview(ui.status === "DELETE" ? "DELETE" : "REVIEW");
   $("#btn-scan").onclick = () => startJob("/api/scan", { account: ui.account || null });
   $("#btn-cleanup").onclick = cleanupDialog;
@@ -289,6 +296,12 @@ function wire() {
     if (!(await decide([g], ev.target.value))) render();
     else if (ui.cursor === g.key) reopenCursor();
   });
+  $("#list tbody").addEventListener("click", (ev) => {
+    const what = ev.target.closest("[data-empty]")?.dataset.empty;
+    if (what === "accounts") accountsDialog();
+    if (what === "tour") startTour();
+    if (what === "scan") startJob("/api/scan", {});
+  });
   $("#more").addEventListener("click", async (ev) => {
     if (ev.target.id === "load-more") { await loadEmails(false); render(); }
   });
@@ -323,7 +336,7 @@ function wire() {
     } else if (k === "Enter" && ui.cursor) setPane("right", true);
     else if (k === "z") toast.undo?.();
     else if (k === "/") $("#q").focus();
-    else if (k === "?") helpDialog();
+    else if (k === "?") helpMenu($("#btn-help"), () => startTour(), welcome);
     else if (k === "Escape") { ui.selected.clear(); ui.cursor = null; closeDetail(); render(); }
     else return;
     ev.preventDefault();
@@ -340,19 +353,36 @@ function wire() {
 
   setInterval(ping, 10000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
-  window.addEventListener("pagehide", () => navigator.sendBeacon("/api/bye", "{}"));
+  window.addEventListener("pagehide", () => navigator.sendBeacon(withKey("/api/bye"), "{}"));
+}
+
+function locked() {
+  $("#offline-text").innerHTML = "This page only works inside the Free(up)Mail window. Open Free(up)Mail from its icon "
+    + "(or FreeUpMail.exe) — your mail stays private to that window.";
+  $("#offline").hidden = false;
 }
 
 async function init() {
   initLayout();
+  if (!KEY) { locked(); return; }
   wire();
   closeDetail();
+  let st;
+  try {
+    st = await loadState();
+  } catch (e) {
+    if (e.locked) { locked(); return; }
+    throw e;
+  }
   ping();
-  const st = await loadState();
+  syncTheme(st.settings);
+  $("#demo-banner").hidden = !st.demo;
   await loadSenders();
   render();
   if (st.job.running) { ui.jobRunning = true; watchJob(); }
-  if (!ui.accounts.length) accountsDialog("Add an account to get started.");
+  const shot = new URLSearchParams(location.search).get("shot");
+  if (shot && st.demo) await screenshot(shot, { openItem, reloadList });
+  else if (st.settings.welcome_done !== "1") welcome();
 }
 
 init();

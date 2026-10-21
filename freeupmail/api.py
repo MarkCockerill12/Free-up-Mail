@@ -1,10 +1,24 @@
-"""JSON API behind the GUI: background jobs, heartbeat and route handlers."""
+"""JSON API behind the GUI: background jobs, heartbeat and the read/account routes.
+Routes that start mailbox jobs (scan, cleanup, restore, rules) live in jobs.py."""
 
+import os
+import subprocess
+import sys
 import threading
 import time
 import webbrowser
 
-from . import cleanup, filters, imapmail, outlook, providers, rules, store, views
+from . import (
+    automation,
+    backup,
+    filters,
+    imapmail,
+    perms,
+    providers,
+    rules,
+    store,
+    views,
+)
 
 
 class Job:
@@ -28,6 +42,8 @@ class Job:
         def run():
             try:
                 fn(self.write)
+            except perms.NotAllowed as exc:
+                self.write(f"STOPPED: {exc}")
             except Exception as exc:  # noqa: BLE001 - surface any failure in the GUI log
                 self.write(f"ERROR: {exc}")
             finally:
@@ -56,26 +72,35 @@ JOB = Job()
 HEART = Heartbeat()
 
 
-def _start(name: str, fn) -> dict:
+def start(name: str, fn) -> dict:
     return {"ok": True} if JOB.start(name, fn) else {"error": "Another task is still running."}
 
 
 # ---------- GET ----------
 
+def hello(_: dict) -> dict:
+    return {"app": "freeupmail"}
+
+
 def state(_: dict) -> dict:
     db = store.connect()
     counts = dict(db.execute("SELECT account, COUNT(*) FROM messages GROUP BY account"))
     scans = {a: (t, s) for a, t, s in db.execute("SELECT account, scanned_at, status FROM scans")}
+    grants = perms.all_grants(db)
     accounts = []
-    for email, (kind, _) in providers.accounts().items():
+    for email, (kind, cfg) in providers.accounts().items():
         scanned_at, status = scans.get(email, ("", "not scanned"))
-        accounts.append({"email": email, "type": kind, "messages": counts.get(email, 0),
-                         "scanned_at": scanned_at, "status": status})
+        accounts.append({"email": email, "type": kind, "messages": counts.get(email, 0), "scanned_at": scanned_at,
+                         "status": status, "perms": grants.get(email, []), "demo": bool((cfg or {}).get("demo"))})
     trashed = db.execute("SELECT COUNT(*) FROM trashed WHERE restored = 0").fetchone()[0]
     return {
         "accounts": accounts,
+        "perm_labels": perms.PERMS,
         "settings": store.get_settings(db, rules.DEFAULT_SETTINGS),
         "trashed": trashed,
+        "backups": backup.stats(db),
+        "demo": bool(store.load_config().get("demo")),
+        "data_folder": str(store.APP_DIR),
         "job": {"running": JOB.running, "log": JOB.log[-150:]},
     }
 
@@ -89,21 +114,32 @@ def plan(_: dict) -> dict:
 
 
 def message(query: dict) -> dict:
+    db = store.connect()
     account, msg_id = query.get("account", ""), query.get("msg_id", "")
-    entry = providers.accounts().get(account)
-    if not entry:
-        return {"error": f"{account} is not connected"}
-    if entry[0] == "outlook":
-        return outlook.fetch_message(msg_id)
-    result = providers.module(entry[1]).fetch_message(entry[1], msg_id)
-    row = store.connect().execute(
-        "SELECT rfc_id FROM messages WHERE account = ? AND msg_id = ?", (account, msg_id)
-    ).fetchone()
-    result["web_link"] = providers.web_link(entry, row[0] if row else "")
+    try:
+        box = providers.Mailbox(db, account)
+        result = box.fetch(msg_id)
+    except perms.NotAllowed as exc:
+        return {"error": str(exc), "permission": "read"}
+    row = db.execute("SELECT rfc_id FROM messages WHERE account = ? AND msg_id = ?", (account, msg_id)).fetchone()
+    result.setdefault("web_link", providers.web_link(providers.accounts().get(account), row[0] if row else ""))
     return result
 
 
-# ---------- POST ----------
+def providers_info(_: dict) -> dict:
+    """Known providers for the Add account form: domain -> server, app-password page."""
+    known = {d: {"host": p[0], "help": p[2]} for d, p in imapmail.PROVIDERS.items()}
+    return {"providers": known, "microsoft": sorted(imapmail.MICROSOFT_DOMAINS)}
+
+
+def rules_info(_: dict) -> dict:
+    db = store.connect()
+    own = [{**r, "summary": automation.describe(r), "exports": filters.exportable(r)} for r in automation.load(db)]
+    return {"rules": own, "fields": automation.FIELDS, "ops": automation.OPS, "choices": automation.CHOICES,
+            "actions": automation.ACTIONS, "action_perm": automation.ACTION_PERM}
+
+
+# ---------- POST: reading & decisions ----------
 
 def emails(body: dict) -> dict:
     return views.emails(store.connect(), body)
@@ -143,10 +179,10 @@ def settings(body: dict) -> dict:
     return {"ok": True}
 
 
-def providers_info(_: dict) -> dict:
-    """Known providers for the Add account form: domain -> server, app-password page."""
-    known = {d: {"host": p[0], "help": p[2]} for d, p in imapmail.PROVIDERS.items()}
-    return {"providers": known, "microsoft": sorted(imapmail.MICROSOFT_DOMAINS)}
+# ---------- POST: accounts & permissions ----------
+
+def _clean_perms(values) -> list[str]:
+    return [p for p in values or [] if p in perms.PERMS]
 
 
 def add_account(body: dict) -> dict:
@@ -167,74 +203,75 @@ def add_account(body: dict) -> dict:
     config = store.load_config()
     config["imap"] = [a for a in config["imap"] if a["email"] != addr] + [account]
     store.save_config(config)
+    perms.set_grants(store.connect(), addr, _clean_perms(body.get("perms", perms.DEFAULT_NEW)))
     return {"ok": True}
 
 
 def remove_account(body: dict) -> dict:
-    ms = outlook.connected()
-    if ms and ms.get("email") == body["email"]:
+    db = store.connect()
+    if providers.outlook_email() == body["email"]:
+        from . import outlook
         outlook.disconnect()
-        return {"ok": True}
-    config = store.load_config()
-    config["imap"] = [a for a in config["imap"] if a["email"] != body["email"]]
-    store.save_config(config)
+    else:
+        config = store.load_config()
+        config["imap"] = [a for a in config["imap"] if a["email"] != body["email"]]
+        store.save_config(config)
+    perms.forget(db, body["email"])
     return {"ok": True}
 
 
-def scan(body: dict) -> dict:
-    only = body.get("account")
-
-    def run(log):
-        db = store.connect()
-        for acc in providers.imap_accounts(only):
-            providers.module(acc).scan_account(acc, db, log)
-        ms = outlook.connected()
-        if ms and only in (None, "", ms["email"]):
-            outlook.scan(db, log)
-
-    return _start("scan", run)
+def set_grants(body: dict) -> dict:
+    account = body.get("account", "")
+    if account not in providers.accounts():
+        return {"error": f"{account} is not connected"}
+    perms.set_grants(store.connect(), account, _clean_perms(body.get("perms")))
+    return {"ok": True}
 
 
-def run_cleanup(body: dict) -> dict:
-    if not body.get("confirm"):
-        return {"error": "not confirmed"}
-    return _start("cleanup", lambda log: cleanup.run_cleanup(body.get("account") or None, log))
+# ---------- POST: rules ----------
 
-
-def restore(body: dict) -> dict:
-    items = body.get("items") or []
-    if body.get("all"):
-        db = store.connect()
-        query = "SELECT account, msg_id FROM trashed WHERE restored = 0"
-        params: tuple = ()
-        if body.get("account"):
-            query, params = query + " AND account = ?", (body["account"],)
-        items = [list(r) for r in db.execute(query, params)]
-    if not items:
-        return {"error": "Nothing to restore."}
-    return _start("restore", lambda log: cleanup.run_restore(items, log))
-
-
-def outlook_connect(_: dict) -> dict:
-    if JOB.running:
-        return {"error": "Another task is still running."}
+def save_rule(body: dict) -> dict:
     try:
-        flow = outlook.start_sign_in()
-    except RuntimeError as exc:
+        return {"ok": True, "id": automation.save(store.connect(), body)}
+    except ValueError as exc:
         return {"error": str(exc)}
 
-    def run(log):
-        if outlook.finish_sign_in(flow, log):
-            outlook.scan(store.connect(), log)
 
-    JOB.start("Outlook sign-in", run)
-    return {"user_code": flow["user_code"], "verification_uri": flow["verification_uri"]}
+def delete_rule(body: dict) -> dict:
+    automation.delete(store.connect(), body.get("id", 0))
+    return {"ok": True}
 
 
-def outlook_rules(_: dict) -> dict:
-    if not outlook.connected():
-        return {"error": "Outlook is not connected"}
-    return _start("Outlook rules", lambda log: filters.outlook_rules(store.connect(), log))
+def preview_rule(body: dict) -> dict:
+    try:
+        rule = automation.validate(body)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return views.rule_preview(store.connect(), rule)
+
+
+# ---------- POST: misc ----------
+
+def _open_path(path: str) -> None:
+    if sys.platform == "win32":
+        os.startfile(path)
+    else:
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+
+
+def open_folder(body: dict) -> dict:
+    """Show the data or backups folder in the file manager."""
+    path = backup.folder() if body.get("what") == "backups" else store.APP_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    _open_path(str(path))
+    return {"ok": True}
+
+
+def prune_backups(body: dict) -> dict:
+    days = int(body.get("days") or 0)
+    if days < 1:
+        return {"error": "Pick how old backups must be before they are deleted."}
+    return {"ok": True, "deleted": backup.prune(store.connect(), days)}
 
 
 def open_link(body: dict) -> dict:
@@ -258,11 +295,13 @@ def bye(_: dict) -> dict:
 
 
 GET_ROUTES = {
+    "/api/hello": hello,
     "/api/state": state,
     "/api/senders": senders_list,
     "/api/plan": plan,
     "/api/message": message,
     "/api/providers": providers_info,
+    "/api/rules": rules_info,
 }
 POST_ROUTES = {
     "/api/emails": emails,
@@ -271,14 +310,13 @@ POST_ROUTES = {
     "/api/settings": settings,
     "/api/accounts": add_account,
     "/api/accounts/remove": remove_account,
-    "/api/scan": scan,
-    "/api/cleanup": run_cleanup,
-    "/api/restore": restore,
-    "/api/outlook/connect": outlook_connect,
-    "/api/outlook/rules": outlook_rules,
+    "/api/grants": set_grants,
+    "/api/rules/save": save_rule,
+    "/api/rules/delete": delete_rule,
+    "/api/rules/preview": preview_rule,
+    "/api/backups/prune": prune_backups,
+    "/api/open-folder": open_folder,
     "/api/open": open_link,
     "/api/ping": ping,
     "/api/bye": bye,
 }
-# sendBeacon cannot set custom headers; closing the app is harmless to allow.
-HEADERLESS_POSTS = {"/api/bye"}

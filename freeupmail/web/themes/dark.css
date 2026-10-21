@@ -1,0 +1,34 @@
+/* Minimal Dark: the Minimal layout (shared rules live in minimal.css) on dark greys.
+   Emails themselves still show on white, the way their senders designed them. */
+html[data-theme=dark] {
+  color-scheme: dark;
+  --font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --title-font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  --face: #18181b; --face-dark: #27272a; --shadow: #303036; --white: #1f1f23; --hi: transparent;
+  --text: #e4e4e7; --text-2: #d4d4d8; --muted: #a1a1aa; --link: #7aa2ff; --link-hover: #a5c0ff; --h3: #e4e4e7;
+  --select: #3b5bdb; --select-fg: #ffffff; --select-soft: #232a3d; --field-border: #34343a; --field-bg: #141417;
+  --cursor-bg: #263252; --cursor-fg: #f4f4f5; --cursor-sub: #b8c4e0;
+  --row-hover: #24242a; --row-line: #26262b;
+  --note-bg: #2f2a17; --note-line: #5c4d1c; --note-fg: #f5e9c4;
+  --tp-bg: #18181b; --tp-title-bg: #18181b; --tp-title-fg: #e4e4e7; --tp-title-shadow: none;
+  --tp-head-bg: transparent; --tp-head-fg: #a1a1aa; --tp-body: transparent; --tp-body-line: transparent; --tp-radius: 0;
+  --title: #1f1f23; --title-fg: #f4f4f5; --title-shadow: none; --title-h: 44px;
+  --window-line: #34343a; --window-radius: 14px; --window-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+  --close-bg: #2a2a30; --close-fg: #d4d4d8; --close-line: transparent; --close-radius: 50%;
+  --btn: #27272a; --btn-down: #303036; --btn-line: #3f3f46; --btn-radius: 8px; --btn-fg: #e4e4e7;
+  --hot: 0 0 0 3px rgba(122, 162, 255, .2); --hot-bg: #2e2e33; --primary-ring: none;
+  --tb-hover-bg: #27272a; --tb-hover-line: transparent; --tb-on-bg: #303036;
+  --th-bg: #1f1f23; --th-line: #303036; --th-hover: inset 0 -2px #7aa2ff;
+  --head-bg: #1f1f23;
+  --chip-bg: #27272a; --chip-line: #3f3f46; --chip-fg: #d4d4d8;
+  --scroll-track: transparent; --scroll-thumb: #3f3f46; --scroll-thumb-line: transparent;
+  --tab-accent: #7aa2ff; --splitter-hover: #27272a; --check: #7aa2ff;
+  --del: #ff8a80; --del-bg: #3a1f1f; --del-line: #6b2f2c;
+  --keep: #7ddc85; --keep-bg: #1b3220; --keep-line: #2f5a35;
+  --rev: #f5c66a; --rev-bg: #372c14; --rev-line: #6b5420;
+  --prot: #c4a8ff; --prot-bg: #2b2342; --prot-line: #4d3d7a;
+  --info: #8fb4ff; --info-bg: #1e2a44; --info-line: #34497a;
+}
+html[data-theme=dark] .acct-ico { filter: saturate(.85); }
+html[data-theme=dark] .nav .dot { border-color: rgba(255, 255, 255, .25); }
+html[data-theme=dark] kbd { background: #27272a; }

@@ -1,152 +1,50 @@
-import { $, api, esc, fmt } from "./util.js";
+/* Protection & backups, the Clean up confirmation, and the "?" help menu. */
+import { api, esc, fmt, sizeText, toast } from "./util.js";
 import { ui, loadState } from "./state.js";
-
-function modal(html, onSubmit) {
-  const dlg = $("#modal");
-  const form = $("#modal-body");
-  form.innerHTML = html;
-  // XP window chrome: the <h2> becomes the blue title bar with a close button,
-  // everything after it goes into the window body.
-  const title = form.querySelector("h2");
-  const content = document.createElement("div");
-  content.className = "content";
-  while (title.nextSibling) content.appendChild(title.nextSibling);
-  form.appendChild(content);
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "xp-close";
-  close.title = "Close";
-  close.textContent = "✕";
-  close.onclick = () => dlg.close();
-  title.appendChild(close);
-  form.onsubmit = async (ev) => {
-    const btn = ev.submitter;
-    if (!btn || btn.value === "cancel") return;
-    ev.preventDefault();
-    btn.disabled = true;
-    try {
-      if ((await onSubmit(btn.value, form)) !== false) dlg.close();
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      btn.disabled = false;
-    }
-  };
-  dlg.showModal();
-  return form;
-}
+import { modal } from "./modal.js";
+import { showMenu } from "./menu.js";
 
 export function settingsDialog() {
   const s = ui.settings;
+  const b = ui.backups || { count: 0, bytes: 0 };
   const opt = (v, label) => `<option value="${v}" ${s.keep_security === v ? "selected" : ""}>${label}</option>`;
-  modal(`<h2>Protection rules</h2>
+  modal(`<h2>Protection & backups</h2>
     <p class="note">When a sender is marked <b>Delete</b>, these emails from them are still kept.
-      Starred/flagged emails, emails you pin, and anyone you've ever emailed are always kept.</p>
+      Starred/flagged emails, emails you pin or restore, "always keep" rules and anyone you've ever emailed are always kept.</p>
     <div class="row"><label>Security & sign-in alerts</label><select name="keep_security">
       ${opt("all", "Always keep")}${opt("90d", "Keep only the last 90 days")}${opt("none", "Don't protect")}</select></div>
     <div class="row"><label>Receipts, refunds, payslips, bookings</label><input type="checkbox" name="keep_receipts" ${s.keep_receipts === "1" ? "checked" : ""}></div>
     <div class="row"><label>Delivery & parcel updates</label><input type="checkbox" name="keep_shipping" ${s.keep_shipping === "1" ? "checked" : ""}></div>
-    <p class="note">Old sign-in alerts and delivery updates are rarely useful; switching those two off clears the most clutter.</p>
+    <h3>Backups</h3>
+    <div class="row"><label>Save a copy before deleting</label><input type="checkbox" name="backup" ${s.backup === "1" ? "checked" : ""}>
+      <span class="note">Recommended. Each email is saved on this computer before it goes to Trash, so it can be
+      put back even after the Trash is emptied.</span></div>
+    <div class="row"><label>Backups so far</label><span><b>${fmt(b.count)}</b> emails, ${sizeText(b.bytes)}</span>
+      <button type="button" data-open="backups">Open folder</button></div>
+    <div class="row"><label>Free up space</label><select name="prune"><option value="">Keep all backups</option>
+      <option value="30">Delete backups older than 30 days</option><option value="90">… older than 90 days</option>
+      <option value="365">… older than a year</option></select></div>
+    <h3>Rules</h3>
+    <div class="row"><label>Run automatic rules after each scan</label><input type="checkbox" name="auto_rules" ${s.auto_rules === "1" ? "checked" : ""}>
+      <span class="note">Only rules you marked "run automatically".</span></div>
     <div class="foot"><button value="cancel">Cancel</button><button value="save" class="primary">Save</button></div>`,
   async (_, f) => {
+    if (f.backup.checked === false && s.backup === "1"
+        && !confirm("Turn off backups? Emails deleted from now on can only be restored while they are still in Trash.")) return false;
+    if (f.prune.value && !confirm(`Delete the local backup copies older than ${f.prune.value} days? Emails in your mailboxes are not affected.`)) return false;
     await api("/api/settings", {
-      keep_security: f.keep_security.value,
-      keep_receipts: f.keep_receipts.checked ? "1" : "0",
-      keep_shipping: f.keep_shipping.checked ? "1" : "0",
+      keep_security: f.keep_security.value, keep_receipts: f.keep_receipts.checked ? "1" : "0",
+      keep_shipping: f.keep_shipping.checked ? "1" : "0", backup: f.backup.checked ? "1" : "0",
+      auto_rules: f.auto_rules.checked ? "1" : "0",
     });
+    if (f.prune.value) {
+      const { deleted } = await api("/api/backups/prune", { days: Number(f.prune.value) });
+      toast(`${fmt(deleted)} old backups deleted`);
+    }
     await loadState();
     await ui.refresh();
   });
-}
-
-let providerInfo = null;
-
-/** Server name and app-password page for a typed address, from the known-providers list. */
-function providerFor(addr) {
-  const domain = (addr.split("@")[1] || "").toLowerCase();
-  if (!providerInfo || !domain) return null;
-  if (providerInfo.microsoft.some((d) => domain.split(".")[0] === d.split(".")[0])) return { microsoft: true };
-  return providerInfo.providers[domain] || (domain.startsWith("yahoo.") ? providerInfo.providers["yahoo.com"] : null);
-}
-
-export async function accountsDialog(msg = "", code = null) {
-  if (!providerInfo) providerInfo = await api("/api/providers").catch(() => ({ providers: {}, microsoft: [] }));
-  const hasOutlook = ui.accounts.some((a) => a.type === "outlook");
-  const rows = ui.accounts.map((a) => `<tr><td>${esc(a.email)}</td><td>${a.type}</td><td class="num">${fmt(a.messages)}</td>
-    <td class="${a.status === "ok" ? "ok" : "err"}">${esc(a.status)}</td><td>${esc((a.scanned_at || "").slice(0, 16).replace("T", " "))}</td>
-    <td><button value="scan:${esc(a.email)}">Rescan</button> <button value="rm:${esc(a.email)}" class="link">Remove</button></td></tr>`).join("");
-  const outlookBlock = code
-    ? `<p>Open <a href="${esc(code.verification_uri)}" target="_blank" rel="noopener"><b>${esc(code.verification_uri)}</b></a>, enter this code and sign in:</p>
-       <div class="code">${esc(code.user_code)}</div>
-       <p class="note">Valid for 15 minutes. Free(up)Mail scans Outlook as soon as you approve (progress bottom-right).</p>`
-    : `<p class="note">${hasOutlook ? "Connected. Reconnect if a scan says the sign-in expired."
-        : "Signs in on Microsoft's own page; only a sign-in token is stored, never your password."}</p>
-       <button value="outlook">${hasOutlook ? "Reconnect Outlook" : "Connect Outlook"}</button>`;
-  const form = modal(`<h2>Accounts</h2>
-    <table><thead><tr><th>Account</th><th>Type</th><th class="num">Emails</th><th>Status</th><th>Scanned (UTC)</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table>
-    <h3>Outlook / Hotmail / Live / Microsoft 365</h3>${outlookBlock}
-    <h3>Add any other account (Gmail, Yahoo, iCloud, AOL, your own domain…)</h3>
-    <div class="row"><input type="email" name="email" placeholder="you@example.com" style="flex:1" autocomplete="off">
-      <input type="password" name="pw" placeholder="password or app password" style="flex:1" autocomplete="off"></div>
-    <p class="note" id="provider-hint">${GENERIC_HINT}</p>
-    <details><summary>Server settings</summary>
-      <div class="row"><label>IMAP server</label><input type="text" name="host" placeholder="found automatically" style="flex:1"></div>
-      <div class="row"><label>Port</label><input type="number" name="port" value="993" style="width:80px">
-        <span class="note">993 = SSL, 143 = STARTTLS</span></div>
-      <div class="row"><label>Username</label><input type="text" name="user" placeholder="only if it isn't the email address" style="flex:1"></div>
-    </details>
-    <p class="${msg.startsWith("✓") ? "ok" : "err"}">${esc(msg)}</p>
-    <div class="foot"><button value="cancel">Close</button><button value="add" class="primary">Test & save</button></div>`,
-  async (v, f) => {
-    if (v === "outlook") {
-      try {
-        const res = await api("/api/outlook/connect", {});
-        ui.watchJob();
-        accountsDialog("", res);
-      } catch (e) { accountsDialog(e.message); }
-      return false;
-    }
-    if (v === "add") {
-      try {
-        await api("/api/accounts", {
-          email: f.email.value, password: f.pw.value, host: f.host.value.trim(), port: f.port.value, user: f.user.value,
-        });
-        await loadState();
-        accountsDialog(`✓ ${f.email.value} connected. Click Rescan to load it.`);
-      } catch (e) { accountsDialog(e.message); }
-      return false;
-    }
-    const [cmd, email] = v.split(/:(.*)/);
-    if (cmd === "rm") {
-      if (confirm(`Remove ${email} from Free(up)Mail? Its mailbox is not touched.`)) {
-        await api("/api/accounts/remove", { email });
-        await loadState();
-        await ui.refresh();
-        accountsDialog();
-      }
-      return false;
-    }
-    if (cmd === "scan") { ui.startJob("/api/scan", { account: email }); return true; }
-    return false;
-  });
-  form.email.addEventListener("input", () => { $("#provider-hint").innerHTML = providerHint(form.email.value); });
-}
-
-const GENERIC_HINT = "Most providers need an <b>app password</b> (made in your account's security settings), not your normal password.";
-
-function providerHint(addr) {
-  const p = providerFor(addr);
-  if (p?.microsoft) return "Microsoft addresses connect with the <b>Connect Outlook</b> button above.";
-  if (p) {
-    const make = p.help
-      ? ` Make one at <a href="${esc(p.help)}" target="_blank" rel="noopener">${esc(p.help.replace(/^https:[/][/]/, ""))}</a>.`
-      : "";
-    return `Server <b>${esc(p.host)}</b> found automatically. Use an <b>app password</b> (2-step sign-in must be on).${make}`;
-  }
-  if (!addr.includes("@")) return GENERIC_HINT;
-  return `Unknown provider: Free(up)Mail tries <b>imap.${esc(addr.split("@")[1])}</b>. If that fails, open
-    <b>Server settings</b> and enter the IMAP server from your provider's help pages. ${GENERIC_HINT}`;
+  document.querySelector("[data-open=backups]").onclick = () => api("/api/open-folder", { what: "backups" }).catch((e) => alert(e.message));
 }
 
 export async function cleanupDialog() {
@@ -159,46 +57,30 @@ export async function cleanupDialog() {
     s.keep_security === "all" ? "all security alerts" : s.keep_security === "90d" ? "security alerts from the last 90 days" : "",
     s.keep_receipts === "1" ? "receipts" : "", s.keep_shipping === "1" ? "delivery updates" : "",
   ].filter(Boolean).join(", ");
+  const perms = Object.fromEntries(ui.accounts.map((a) => [a.email, a.perms]));
+  const backups = s.backup === "1";
+  const needs = (acc) => !perms[acc]?.includes("trash") || (backups && !perms[acc]?.includes("read"));
+  const rows = entries.map(([a, c]) => `<tr><td>${esc(a)}</td><td class="num"><b>${fmt(c)}</b> emails</td>
+    <td>${needs(a) ? `<label><input type="checkbox" name="allow" value="${esc(a)}"> Allow Free(up)Mail to move these to Trash
+      ${backups ? "(and read them to save backups)" : ""}</label>` : '<span class="chip ok">allowed</span>'}</td></tr>`).join("");
   modal(`<h2>Clean up</h2>
-    <p>These emails go to each account's <b>Trash</b> / <b>Deleted Items</b> folder, where most providers keep
-      them for about 30 days. <b>In Trash</b> in the sidebar can restore any of them.</p>
-    <table><tbody>${entries.map(([a, c]) => `<tr><td>${esc(a)}</td><td class="num"><b>${fmt(c)}</b> emails</td></tr>`).join("")}</tbody></table>
-    <p class="note">Still kept from deleted senders: ${esc(kept || "nothing extra")}, plus starred/flagged and pinned emails.
-      Anyone you've emailed is never included. Each email is re-checked before it moves.</p>
+    <p>These emails go to each account's <b>Trash</b> / <b>Deleted Items</b> folder. ${backups
+      ? "A copy of each is saved on this computer first, so <b>Deleted</b> in the sidebar can put any of them back — even after the Trash is emptied."
+      : "<b>Backups are off</b>: they can only be put back while they are still in Trash (usually about 30 days)."}</p>
+    <table><tbody>${rows}</tbody></table>
+    <p class="note">Still kept from deleted senders: ${esc(kept || "nothing extra")}, plus starred/flagged, pinned and restored
+      emails and "always keep" rules. Anyone you've emailed is never included. Each email is re-checked before it moves.</p>
     <div class="foot"><button value="cancel">Cancel</button><button value="go" class="danger">Move ${fmt(total)} to Trash</button></div>`,
-  async () => { ui.startJob("/api/cleanup", { confirm: true, account: ui.account || null }); });
-}
-
-export function filtersDialog() {
-  const opts = ui.accounts.map((a) => `<option value="${esc(a.email)}" data-type="${a.type}" ${a.email === ui.account ? "selected" : ""}>${esc(a.email)}</option>`).join("");
-  const form = modal(`<h2>Filters for future mail</h2>
-    <p class="note">Your mail provider then bins future mail from every sender marked <b>Delete</b> by itself, even on your phone,
-      with nothing left running. For Gmail and Outlook, subjects with security, receipt or delivery words
-      (per your protection rules) are exempt.</p>
-    <div class="row"><label>Account</label><select name="acct">${opts}</select></div>
-    <div id="howto"></div>
-    <div class="foot"><button value="cancel">Close</button><button value="go" class="primary" id="filters-go"></button></div>`,
   async (_, f) => {
-    if (type() === "outlook") { ui.startJob("/api/outlook/rules", {}); return true; }
-    location.href = `/api/filters?account=${encodeURIComponent(f.acct.value)}`;
-    return false;
+    const allow = [...f.querySelectorAll("input[name=allow]:checked")].map((x) => x.value);
+    const blocked = entries.filter(([a]) => needs(a) && !allow.includes(a));
+    if (blocked.length === entries.length) { alert("Tick at least one account to allow, or press Cancel."); return false; }
+    if (blocked.length && !confirm(`${blocked.map(([a]) => a).join(", ")} will be skipped (not allowed). Carry on with the rest?`)) return false;
+    ui.startJob("/api/cleanup", { confirm: true, account: ui.account || null, allow, allow_read: backups });
   });
-  const type = () => form.acct.selectedOptions[0]?.dataset.type;
-  const sync = () => {
-    $("#filters-go").textContent = { outlook: "Create Outlook rules", gmail: "Download Gmail filter file" }[type()]
-      || "Download address list";
-    $("#howto").innerHTML = {
-      outlook: '<p class="note">Creates inbox rules named "Free(up)Mail 1, 2…" (earlier ones are replaced; your own rules are untouched).</p>',
-      gmail: `<ol class="note"><li>Download the file.</li><li>Gmail → ⚙ → See all settings → Filters and Blocked Addresses → <b>Import filters</b>.</li>
-         <li>Choose the file → Open file → Create filters. Re-import after big changes (delete the old Free(up)Mail filters first).</li></ol>`,
-    }[type()] || `<p class="note">This provider has no filter import. Download the list of senders marked Delete
-         and add them to <b>Blocked senders</b> (or a filter) in its webmail settings.</p>`;
-  };
-  form.acct.addEventListener("change", sync);
-  sync();
 }
 
-export function helpDialog() {
+export function shortcutsDialog() {
   modal(`<h2>Keyboard shortcuts</h2>
     <div class="keys">
       <kbd>↑</kbd><kbd>↓</kbd><span>Move through the list (opens the item on the right)</span>
@@ -211,6 +93,7 @@ export function helpDialog() {
       <kbd>Z</kbd><span>Undo the last change</span>
       <kbd>/</kbd><span>Search</span>
       <kbd>Enter</kbd><span>Show the preview pane for the current row (or double-click it)</span>
+      <kbd>?</kbd><span>This help menu</span>
       <kbd>Esc</kbd><span>Clear selection</span>
     </div>
     <fieldset><legend>Panes</legend>
@@ -219,4 +102,30 @@ export function helpDialog() {
       in the task pane to fold it. Sizes are remembered.</fieldset>
     <p class="note">Review mode: <kbd>D</kbd> delete, <kbd>K</kbd> keep, <kbd>S</kbd> skip, <kbd>B</kbd> back.</p>
     <div class="foot"><button value="cancel" class="primary">Close</button></div>`, async () => true);
+}
+
+export function privacyDialog() {
+  modal(`<h2>Your privacy</h2>
+    <p class="lead"><b>Everything runs on this computer.</b> There is no Free(up)Mail server, account, analytics or tracking.</p>
+    <ul>
+      <li>Free(up)Mail connects straight from this computer to your email providers (Google, Microsoft, Yahoo…) and nowhere else.</li>
+      <li>Passwords, sign-ins, the email list and backups are stored only in <code>${esc(ui.dataFolder || "")}</code>.</li>
+      <li>It only does what you allow per account under <b>Accounts → Permissions</b>, and checks that before every action.</li>
+      <li>Nothing is ever permanently deleted: emails go to Trash, with a backup copy saved here first.</li>
+      <li>Remote images in emails are blocked until you click to show them, so senders can't see you opened them.</li>
+      <li>The window only works with a secret key made each time the app starts, so other programs can't read your mail through it.</li>
+    </ul>
+    <div class="foot"><button type="button" data-open="data" class="left">Open data folder</button>
+      <button value="cancel" class="primary">Close</button></div>`, async () => true);
+  document.querySelector("[data-open=data]").onclick = () => api("/api/open-folder", { what: "data" }).catch((e) => alert(e.message));
+}
+
+export function helpMenu(anchor, startTour, showWelcome) {
+  showMenu(anchor, [
+    { label: "Tutorial — show me around", icon: "🎓", run: startTour },
+    { label: "Welcome screen", icon: "👋", run: showWelcome },
+    "-",
+    { label: "Keyboard shortcuts", icon: "⌨️", run: shortcutsDialog },
+    { label: "Privacy — what stays on this computer", icon: "🔒", run: privacyDialog },
+  ]);
 }

@@ -1,11 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="xp">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
   <title>Free(up)Mail</title>
+  <script>
+    // Apply the remembered theme before anything is drawn (no flash of the default one).
+    try { document.documentElement.dataset.theme = localStorage.getItem("freeupmail.theme") || "xp"; } catch { /* storage unavailable */ }
+  </script>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/themes/win10.css">
+  <link rel="stylesheet" href="/static/themes/aero.css">
+  <link rel="stylesheet" href="/static/themes/minimal.css">
+  <link rel="stylesheet" href="/static/themes/dark.css">
   <link rel="icon" href="/static/icon.ico">
 </head>
 <body>
@@ -43,16 +50,19 @@
         <button class="tb" id="btn-pane-left" title="Show or hide the task pane"><span class="ico">📁</span>Task pane</button>
         <span class="tb-sep"></span>
         <button class="tb" id="btn-review" title="Go through senders one at a time"><span class="ico">🔎</span>Review</button>
-        <button class="tb" id="btn-cleanup" title="Move everything marked delete to Trash"><span class="ico">🗑️</span><span id="cleanup-label">Clean up</span></button>
+        <button class="tb" id="btn-cleanup" title="Move everything marked delete to Trash (backed up first)"><span class="ico">🗑️</span><span id="cleanup-label">Clean up</span></button>
         <button class="tb" id="btn-scan" title="Re-read the mailboxes"><span class="ico">🔄</span>Rescan</button>
         <span class="tb-sep"></span>
-        <button class="tb" id="btn-filters" title="Make your mail provider bin future junk by itself"><span class="ico">📮</span>Filters</button>
-        <button class="tb" id="btn-settings" title="What is always kept"><span class="ico">🛡️</span>Protection</button>
-        <button class="tb" id="btn-accounts" title="Add or fix accounts"><span class="ico">👤</span>Accounts</button>
+        <button class="tb" id="btn-rules" title="Your rules: send emails wherever you want, now and automatically"><span class="ico">📋</span>Rules</button>
+        <button class="tb" id="btn-settings" title="What is always kept, and backups"><span class="ico">🛡️</span>Protection</button>
+        <button class="tb" id="btn-accounts" title="Add accounts and choose what Free(up)Mail may do"><span class="ico">👤</span>Accounts</button>
         <span class="tb-sep"></span>
         <button class="tb" id="btn-pane-right" title="Show or hide the preview pane"><span class="ico">🪟</span>Preview</button>
-        <button class="tb" id="btn-help" title="Keyboard shortcuts"><span class="ico">❔</span>Help</button>
+        <button class="tb" id="btn-theme" title="Change how Free(up)Mail looks"><span class="ico">🎨</span>Theme</button>
+        <span class="tb-grow"></span>
+        <button class="tb help" id="btn-help" title="Tutorial, keyboard shortcuts and privacy">?</button>
       </div>
+      <div class="banner" id="demo-banner" hidden>🎭 <b>Demo mode</b> — these accounts and emails are made up. Nothing real is read or changed.</div>
       <div class="addressbar">
         <label class="lbl" for="q">Search</label>
         <input class="search" id="q" type="search" placeholder="sender, domain or subject  ( / )">
@@ -86,13 +96,15 @@
 
   <div class="review-mode" id="review" hidden></div>
   <div class="toast" id="toast" hidden></div>
+  <div class="menu" id="menu" hidden></div>
+  <div id="tour" hidden></div>
   <section class="joblog xp-window" id="joblog" hidden>
     <div class="xp-title"><span id="job-title">Working…</span><button class="xp-close" id="job-close" title="Hide">✕</button></div>
     <pre id="job-lines"></pre>
   </section>
   <div class="offline" id="offline" hidden>
     <div class="xp-window"><div class="xp-title">Free(up)Mail</div>
-      <div class="content">Free(up)Mail has been closed. Open it again to carry on.</div></div>
+      <div class="content" id="offline-text">Free(up)Mail has been closed. Open it again to carry on.</div></div>
   </div>
   <dialog id="modal"><form method="dialog" id="modal-body"></form></dialog>
 

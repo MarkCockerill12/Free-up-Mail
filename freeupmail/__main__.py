@@ -1,5 +1,5 @@
-"""python -m freeupmail (also the entry point of the .pyz and .exe builds)."""
+"""python -m freeupmail (also the entry point of the .exe build)."""
 
-from freeupmail.server import main
+from freeupmail.launch import run
 
-main()
+run()

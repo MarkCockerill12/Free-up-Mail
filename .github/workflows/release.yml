@@ -33,7 +33,9 @@ jobs:
       - name: Tests
         run: |
           python -m tests.test_rules
+          python -m tests.test_automation
           python -m tests.test_cleanup
+          python -m tests.test_server
       - name: Build
         run: |
           pip install pyinstaller

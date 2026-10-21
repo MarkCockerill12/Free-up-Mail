@@ -1,0 +1,48 @@
+/* Minimal: plain white, soft greys, rounded corners, one blue accent, no gradients. */
+html[data-theme=minimal] {
+  --font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --title-font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  --face: #f7f7f8; --face-dark: #ececee; --shadow: #e4e4e7; --white: #ffffff; --hi: transparent;
+  --text: #18181b; --text-2: #3f3f46; --muted: #71717a; --link: #2563eb; --link-hover: #1d4ed8; --h3: #18181b;
+  --select: #2563eb; --select-fg: #ffffff; --select-soft: #f0f5ff; --field-border: #e4e4e7; --field-bg: #ffffff;
+  --cursor-bg: #eef3ff; --cursor-fg: #18181b; --cursor-sub: #52525b;
+  --row-hover: #f8fafc; --row-line: #f1f1f3;
+  --note-bg: #fffbeb; --note-line: #fde68a; --note-fg: #18181b;
+  --tp-bg: #f7f7f8; --tp-title-bg: #f7f7f8; --tp-title-fg: #18181b; --tp-title-shadow: none;
+  --tp-head-bg: transparent; --tp-head-fg: #71717a; --tp-body: transparent; --tp-body-line: transparent; --tp-radius: 0;
+  --title: #ffffff; --title-fg: #18181b; --title-shadow: none; --title-h: 44px;
+  --window-line: #e4e4e7; --window-radius: 14px; --window-shadow: 0 20px 50px rgba(0, 0, 0, .18);
+  --close-bg: #f4f4f5; --close-fg: #3f3f46; --close-line: transparent; --close-radius: 50%;
+  --btn: #ffffff; --btn-down: #f4f4f5; --btn-line: #d4d4d8; --btn-radius: 8px; --btn-fg: #18181b;
+  --hot: 0 0 0 3px rgba(37, 99, 235, .14); --hot-bg: #fafafa; --primary-ring: none;
+  --tb-hover-bg: #ececee; --tb-hover-line: transparent; --tb-on-bg: #e4e4e7;
+  --th-bg: #ffffff; --th-line: #ececee; --th-hover: inset 0 -2px #2563eb;
+  --head-bg: #ffffff;
+  --chip-bg: #f4f4f5; --chip-line: #e4e4e7; --chip-fg: #3f3f46;
+  --scroll-track: transparent; --scroll-thumb: #d4d4d8; --scroll-thumb-line: transparent;
+  --tab-accent: #2563eb; --splitter-hover: #ececee; --check: #2563eb;
+}
+html[data-theme=minimal] ::-webkit-scrollbar, html[data-theme=dark] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-theme=minimal] ::-webkit-scrollbar-thumb, html[data-theme=dark] ::-webkit-scrollbar-thumb { border: 2px solid transparent; background-clip: padding-box; border-radius: 6px; box-shadow: none; }
+html[data-theme=minimal] .splitter, html[data-theme=dark] .splitter { border: none; background: var(--face); }
+html[data-theme=minimal] .tp-head, html[data-theme=dark] .tp-head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+html[data-theme=minimal] .chev, html[data-theme=dark] .chev { background: none; border: none; }
+html[data-theme=minimal] .tp-body, html[data-theme=dark] .tp-body { padding: 0 0 4px; }
+html[data-theme=minimal] .nav button, html[data-theme=dark] .nav button { color: var(--text); padding: 5px 8px; border-radius: 6px; }
+html[data-theme=minimal] .nav button:hover, html[data-theme=dark] .nav button:hover { background: var(--face-dark); text-decoration: none; }
+html[data-theme=minimal] .toolbar, html[data-theme=dark] .toolbar { gap: 2px; padding: 6px 8px; box-shadow: none; }
+html[data-theme=minimal] .tb .ico, html[data-theme=dark] .tb .ico { font-size: 15px; }
+html[data-theme=minimal] .addressbar, html[data-theme=dark] .addressbar { box-shadow: none; padding: 6px 10px; }
+html[data-theme=minimal] .listview, html[data-theme=minimal] .preview-body,
+html[data-theme=dark] .listview, html[data-theme=dark] .preview-body { border-radius: 10px; margin: 8px; }
+html[data-theme=minimal] .tag, html[data-theme=minimal] .pill, html[data-theme=minimal] .chip,
+html[data-theme=dark] .tag, html[data-theme=dark] .pill, html[data-theme=dark] .chip { border-radius: 999px; padding: 0 7px; }
+html[data-theme=minimal] .sb-cell, html[data-theme=dark] .sb-cell { border: none; }
+html[data-theme=minimal] .statusbar, html[data-theme=dark] .statusbar { box-shadow: none; padding: 4px 8px; }
+html[data-theme=minimal] .xp-title, html[data-theme=minimal] dialog h2,
+html[data-theme=dark] .xp-title, html[data-theme=dark] dialog h2 { padding: 0 10px 0 16px; border-bottom: 1px solid var(--shadow); }
+html[data-theme=minimal] .xp-close, html[data-theme=dark] .xp-close { width: 26px; height: 26px; font-weight: normal; }
+html[data-theme=minimal] dialog .content, html[data-theme=dark] dialog .content { padding: 14px 18px 18px; background: var(--white); }
+html[data-theme=minimal] button.primary, html[data-theme=dark] button.primary { background: var(--link); color: #fff; border-color: var(--link); }
+html[data-theme=minimal] button.primary:hover:not(:disabled), html[data-theme=dark] button.primary:hover:not(:disabled) { background: var(--link-hover); }
+html[data-theme=minimal] .tour-hole, html[data-theme=dark] .tour-hole { border-radius: 10px; box-shadow: 0 0 0 3px var(--link); }

@@ -25,7 +25,7 @@ def build_pyz() -> Path:
     shutil.copytree(PACKAGE, staging / "freeupmail", ignore=shutil.ignore_patterns("__pycache__"))
     target = DIST / "FreeUpMail.pyz"
     zipapp.create_archive(staging, target, interpreter="/usr/bin/env python3",
-                          main="freeupmail.server:main", compressed=True)
+                          main="freeupmail.launch:run", compressed=True)
     return target
 
 

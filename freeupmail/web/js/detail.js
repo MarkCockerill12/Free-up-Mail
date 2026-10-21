@@ -1,5 +1,7 @@
 import { $, api, esc, fmt, toast, renderBody, hasRemoteContent, STATUS_LABEL, KIND_LABEL, ACTION_LABEL } from "./util.js";
 import { ui, setActions, membersFor, deleteWarning, accountType } from "./state.js";
+import { ruleForSender } from "./rules.js";
+import { grant } from "./accounts.js";
 
 let token = 0;
 const pane = () => $("#detail-body");
@@ -51,12 +53,14 @@ export async function showSender(g) {
         <button data-act="REVIEW">? Review <kbd>R</kbd></button>
         <button class="good" data-act="KEEP">✔ Keep <kbd>K</kbd></button>
         <button class="link" data-act="AUTO">Reset</button>
+        <button class="link" data-rule title="Move, archive, junk or always keep this sender's emails automatically">📋 Make a rule…</button>
         ${unsubLink(g.unsub_url)}
       </div>
       <div class="reason">${fmt(g.count)} emails · <b>${fmt(g.would_delete)}</b> will be deleted
         ${g.protected ? ` · kept anyway: ${kindChips(g.kinds)}` : ""}</div>
     </div>
     <ul class="d-list"><li class="muted">Loading…</li></ul>`);
+  pane().querySelector("[data-rule]").onclick = () => ruleForSender(g);
   pane().querySelectorAll("[data-act]").forEach((b) => (b.onclick = async () => {
     if (await decide([g], b.dataset.act)) {
       const fresh = ui.groups.find((x) => x.key === g.key);
@@ -90,7 +94,7 @@ async function reloadEmail(m) {
 export async function showEmail(m, group = null) {
   const mine = ++token;
   const where = { outlook: "Outlook", gmail: "Gmail" }[accountType(m.account)] || "webmail";
-  const why = m.pinned ? "pinned by you" : m.starred ? "starred" : KIND_LABEL[m.kind] || "";
+  const why = m.pinned ? "pinned by you" : m.starred ? "starred" : m.by_rule ? "an always-keep rule" : KIND_LABEL[m.kind] || "";
   open("Email", `<div class="d-head">
       ${group ? `<button class="link back" data-back>« All from ${esc(group.name || group.label)}</button>` : ""}
       <h2>${esc(m.subject || "(no subject)")}</h2>
@@ -127,16 +131,24 @@ export async function showEmail(m, group = null) {
 
   const body = pane().querySelector(".d-body");
   if (m.status === "trashed") {
-    body.innerHTML = '<div class="note">This email is in Trash. Restore it to read it here.</div>';
+    body.innerHTML = `<div class="note">Free(up)Mail moved this email to Trash. ${m.backup
+      ? "A backup copy is saved on this computer, so it can be restored even after the Trash is emptied."
+      : "There is no backup copy, so it can only be restored while it is still in Trash."}</div>`;
     return;
   }
   let msg;
   try {
     msg = await api(`/api/message?account=${encodeURIComponent(m.account)}&msg_id=${encodeURIComponent(m.msg_id)}`);
   } catch (e) {
-    msg = { error: e.message };
+    msg = { error: e.message, permission: e.permission };
   }
   if (mine !== token) return;
+  if (msg.error && msg.permission === "read") {
+    body.innerHTML = `<div class="note">🔒 Free(up)Mail isn't allowed to open emails in <b>${esc(m.account)}</b>, so only
+      the sender, subject and date are shown.<br><button class="primary" data-allow>Allow opening emails in this account</button></div>`;
+    body.querySelector("[data-allow]").onclick = async () => { await grant(m.account, "read"); showEmail(m, group); };
+    return;
+  }
   if (msg.error) { body.innerHTML = `<div class="note">${esc(msg.error)}</div>`; return; }
   const link = msg.web_link || m.web_link;
   const extra = [

@@ -76,6 +76,27 @@ CREATE TABLE IF NOT EXISTS trashed (
     restored INTEGER DEFAULT 0,
     PRIMARY KEY (account, msg_id)
 );
+-- What Free(up)Mail may do in each mailbox (see perms.py). No row, no access.
+CREATE TABLE IF NOT EXISTS grants (account TEXT NOT NULL, perm TEXT NOT NULL, PRIMARY KEY (account, perm));
+-- Local .eml copy of every email taken before it was moved to Trash.
+CREATE TABLE IF NOT EXISTS backups (
+    account TEXT NOT NULL,
+    msg_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    rfc_id TEXT,
+    from_addr TEXT,
+    from_name TEXT,
+    subject TEXT,
+    date TEXT,
+    seen INTEGER,
+    size INTEGER,
+    saved_at TEXT,
+    PRIMARY KEY (account, msg_id)
+);
+-- Your own rules (automation.py); data is the rule as JSON.
+CREATE TABLE IF NOT EXISTS user_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, position INTEGER DEFAULT 0, data TEXT NOT NULL);
+-- Emails you restored, by Message-ID, so they stay protected even after their id changes.
+CREATE TABLE IF NOT EXISTS rescued (account TEXT NOT NULL, rfc_id TEXT NOT NULL, PRIMARY KEY (account, rfc_id));
 """
 MIGRATIONS = {"unsub_url": "TEXT DEFAULT ''", "rfc_id": "TEXT DEFAULT ''"}
 
@@ -115,6 +136,13 @@ def connect() -> sqlite3.Connection:
     for column, decl in MIGRATIONS.items():
         if column not in existing:
             db.execute(f"ALTER TABLE messages ADD COLUMN {column} {decl}")
+    if not db.execute("SELECT 1 FROM settings WHERE key = 'grants_migrated'").fetchone():
+        # Accounts from before permissions existed keep what they were already doing:
+        # listing and opening emails. Anything that changes a mailbox must be granted.
+        with db:
+            db.executemany("INSERT OR IGNORE INTO grants VALUES (?, ?)",
+                           [(a, p) for (a,) in db.execute("SELECT account FROM scans") for p in ("scan", "read")])
+            db.execute("INSERT INTO settings VALUES ('grants_migrated', '1')")
     return db
 
 
