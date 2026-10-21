@@ -66,14 +66,17 @@ def outlook_connect(body: dict) -> dict:
         flow = outlook.start_sign_in()
     except RuntimeError as exc:
         return {"error": str(exc)}
-    wanted = [p for p in body.get("perms") or perms.DEFAULT_NEW if p in perms.PERMS]
+    # A new sign-in gets the ticked permissions; a reconnect (none sent) keeps the account's own.
+    wanted = [p for p in body["perms"] if p in perms.PERMS] if "perms" in body else None
 
     def run(log):
         if outlook.finish_sign_in(flow, log):
             db = store.connect()
             email = providers.outlook_email()
-            perms.set_grants(db, email, wanted)
-            if "scan" in wanted:
+            if wanted is not None or not perms.granted(db, email):
+                perms.set_grants(db, email, list(perms.DEFAULT_NEW) if wanted is None else wanted)
+            wanted_now = perms.granted(db, email)
+            if "scan" in wanted_now:
                 providers.Mailbox(db, email).scan(log)
 
     api.JOB.start("Outlook sign-in", run)

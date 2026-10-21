@@ -78,6 +78,15 @@ input[type=checkbox], input[type=radio] { accent-color: var(--check); margin: 0 
 ::-webkit-scrollbar-track { background: var(--scroll-track); }
 ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border: 1px solid var(--white); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--scroll-thumb-line); }
 ::-webkit-scrollbar-corner { background: var(--face); }
+/* Arrow buttons and a grip, so a scrollbar never looks like a stray button. */
+::-webkit-scrollbar-thumb:vertical { background-image: repeating-linear-gradient(180deg, transparent 0 2px, rgba(255,255,255,.75) 2px 3px, rgba(0,0,0,.18) 3px 4px), var(--scroll-thumb); background-size: 8px 10px, auto; background-position: center; background-repeat: no-repeat; }
+::-webkit-scrollbar-thumb:horizontal { background-image: repeating-linear-gradient(90deg, transparent 0 2px, rgba(255,255,255,.75) 2px 3px, rgba(0,0,0,.18) 3px 4px), var(--scroll-thumb); background-size: 10px 8px, auto; background-position: center; background-repeat: no-repeat; }
+::-webkit-scrollbar-button:single-button { display: block; width: 16px; height: 16px; background-color: var(--scroll-btn, #eef2fb); border: 1px solid var(--white); box-shadow: inset 0 0 0 1px var(--scroll-thumb-line); border-radius: 3px; background-repeat: no-repeat; background-position: center; background-size: 8px; }
+::-webkit-scrollbar-button:single-button:hover { filter: brightness(1.05); }
+::-webkit-scrollbar-button:single-button:vertical:decrement { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M4 1.5 7.5 6H.5z' fill='%234d6185'/%3E%3C/svg%3E"); }
+::-webkit-scrollbar-button:single-button:vertical:increment { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M4 6.5 .5 2h7z' fill='%234d6185'/%3E%3C/svg%3E"); }
+::-webkit-scrollbar-button:single-button:horizontal:decrement { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.5 4 6 .5v7z' fill='%234d6185'/%3E%3C/svg%3E"); }
+::-webkit-scrollbar-button:single-button:horizontal:increment { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M6.5 4 2 7.5v-7z' fill='%234d6185'/%3E%3C/svg%3E"); }
 
 /* ---------- app frame ---------- */
 .app {
@@ -154,6 +163,10 @@ input[type=checkbox], input[type=radio] { accent-color: var(--check); margin: 0 
 .tb.help { font-weight: bold; min-width: 34px; justify-content: center; }
 .tb-sep { width: 1px; margin: 3px 3px; background: var(--shadow); box-shadow: 1px 0 var(--hi); }
 .tb-grow { flex: 1; }
+/* The toolbar sits above the list, so it reacts to the list's width rather than the window's. */
+.main { container-type: inline-size; }
+@container (max-width: 960px) { .tb.minor .tb-text { display: none; } }
+@container (max-width: 720px) { .tb .tb-text { display: none; } .tb { padding: 3px 6px; } }
 
 .addressbar { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--shadow); box-shadow: 0 1px var(--hi); flex-wrap: wrap; }
 .addressbar .search { flex: 1 1 200px; max-width: 380px; }
@@ -168,7 +181,12 @@ input[type=checkbox], input[type=radio] { accent-color: var(--check); margin: 0 
 
 .listview { flex: 1; min-height: 0; overflow: auto; background: var(--white); margin: 6px; border: 1px solid var(--field-border); border-radius: calc(var(--btn-radius) / 2); }
 table { width: 100%; border-collapse: collapse; }
+#list { table-layout: fixed; }
 th, td { padding: 3px 6px; text-align: left; white-space: nowrap; vertical-align: middle; }
+#list th, #list td { overflow: hidden; text-overflow: ellipsis; }
+.col-grip { position: absolute; top: 0; right: 0; bottom: 0; width: 7px; cursor: col-resize; }
+.col-grip:hover, body.dragging .col-grip { background: linear-gradient(90deg, transparent 2px, var(--link) 2px, var(--link) 4px, transparent 4px); }
+#list select.act { width: calc(100% - 12px); }
 th {
   position: sticky; top: 0; z-index: 1; font-weight: normal; user-select: none; background: var(--th-bg);
   border-right: 1px solid var(--face-dark); border-bottom: 1px solid var(--th-line); height: 23px;
@@ -186,11 +204,10 @@ tbody tr.cursor td { background: var(--cursor-bg); color: var(--cursor-fg); }
 tbody tr.cursor td small, tbody tr.cursor td.subj, tbody tr.cursor .muted { color: var(--cursor-sub); }
 tbody tr.cursor .chip { border-color: rgba(255,255,255,.6); }
 tbody tr.unread td.subj { font-weight: bold; color: var(--text); }
-td.who { max-width: 0; width: 35%; overflow: hidden; text-overflow: ellipsis; }
+td.who { overflow: hidden; text-overflow: ellipsis; }
 td.who .name { overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
 td.who small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
-/* max-width:0 + width lets the subject column take spare space and ellipsize instead of scrolling */
-td.subj { max-width: 0; width: 40%; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+td.subj { overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
 td.zero { color: var(--muted); opacity: .7; }
 .more { padding: 3px 8px 6px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
 .empty { padding: 30px 16px; text-align: center; color: var(--muted); }

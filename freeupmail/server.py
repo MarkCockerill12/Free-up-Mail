@@ -30,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import (
     api,
+    backup,
     filters,
     jobs,  # noqa: F401 - importing it adds its routes to api
     providers,
@@ -202,6 +203,66 @@ def bind() -> Server | None:
     return None
 
 
+def work_area() -> tuple[int, int, int, int] | None:
+    """(left, top, width, height) of the main screen minus the taskbar, in the scaled
+    pixels browsers use for window sizes. None when unknown (not Windows)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        user32 = ctypes.windll.user32
+        user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))  # real pixels for this thread
+        rect = (ctypes.c_long * 4)()
+        user32.SystemParametersInfoW(0x30, 0, rect, 0)  # SPI_GETWORKAREA
+        scale = user32.GetDpiForSystem() / 96
+    except (AttributeError, OSError):
+        return None
+    left, top, right, bottom = (round(v / scale) for v in rect)
+    return left, top, right - left, bottom - top
+
+
+def window_bounds(area) -> tuple[int, int, int, int]:
+    """(x, y, width, height): up to 1500x950, never bigger than the screen, centred."""
+    if not area:
+        return 60, 40, 1280, 800
+    left, top, width, height = area
+    w, h = min(1500, width - 40), min(950, height - 30)
+    return left + (width - w) // 2, top + (height - h) // 2, w, h
+
+
+def _fit_saved_window(area) -> None:
+    """The app window remembers its last size; shrink it if it no longer fits the screen
+    (e.g. a laptop after a big monitor). Sizes that fit are left alone."""
+    prefs = WINDOW_PROFILE / "Default" / "Preferences"
+    if not area or not prefs.is_file():
+        return
+    try:
+        data = json.loads(prefs.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    left, top, width, height = area
+    x, y, w, h = window_bounds(area)
+    changed = False
+
+    def fix(node):
+        nonlocal changed
+        if not isinstance(node, dict):
+            return
+        if {"left", "top", "right", "bottom"} <= node.keys():
+            fits = (node["left"] >= left - 10 and node["top"] >= top - 10
+                    and node["right"] <= left + width + 10 and node["bottom"] <= top + height + 10)
+            if not fits and not node.get("maximized"):
+                node.update({"left": x, "top": y, "right": x + w, "bottom": y + h})
+                changed = True
+            return
+        for child in node.values():
+            fix(child)
+
+    fix(data.get("browser", {}).get("app_window_placement"))
+    fix(data.get("browser", {}).get("window_placement"))
+    if changed:
+        prefs.write_text(json.dumps(data), encoding="utf-8")
+
+
 def open_window(url: str) -> subprocess.Popen | None:
     """Edge/Chrome in app mode with its own profile, so its process lives exactly as
     long as the window. Falls back to the default browser."""
@@ -209,9 +270,15 @@ def open_window(url: str) -> subprocess.Popen | None:
     if not browser:
         webbrowser.open(url)
         return None
+    area = work_area()
+    _fit_saved_window(area)
+    x, y, w, h = window_bounds(area)
     return subprocess.Popen([
-        browser, f"--app={url}", f"--user-data-dir={WINDOW_PROFILE}",
-        "--no-first-run", "--no-default-browser-check", "--window-size=1500,950",
+        browser, f"--app={url}", f"--user-data-dir={WINDOW_PROFILE}", f"--window-size={w},{h}",
+        f"--window-position={x},{y}", "--no-first-run", "--no-default-browser-check",
+        # A private window just for this app: no browser extensions (they could read your
+        # email on screen), no sync and no automatic sign-in to a browser profile.
+        "--disable-extensions", "--disable-sync", "--disable-features=msImplicitSignin,msEdgeSyncConsent",
     ])
 
 
@@ -234,6 +301,16 @@ def wait_until_closed(window: subprocess.Popen | None, started: float) -> None:
         limit = 180 if window_alive else 15 if window is not None else 100
         if now - heart.last_ping > limit:
             return
+
+
+def _tidy_backups() -> None:
+    try:
+        removed = backup.prune_by_setting(store.connect())
+    except Exception as exc:  # noqa: BLE001 - never stop the app over housekeeping
+        print(f"backup tidy failed: {exc!r}", flush=True)
+        return
+    if removed:
+        print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} deleted {removed} backups past their keep time", flush=True)
 
 
 def _fatal(message: str) -> None:
@@ -261,6 +338,7 @@ def main() -> None:
         _fatal(f"Free(up)Mail could not start: ports {PORTS.start}-{PORTS.stop - 1} are all in use.")
         return
     url = app_url(server.server_address[1], TOKEN)
+    threading.Thread(target=_tidy_backups, daemon=True).start()
     store.write_private(SESSION_PATH, json.dumps({"port": server.server_address[1], "token": TOKEN, "pid": os.getpid()}))
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Free(up)Mail running on port {server.server_address[1]}", flush=True)
     try:

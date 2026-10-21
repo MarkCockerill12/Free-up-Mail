@@ -57,7 +57,7 @@ export async function showSender(g) {
         ${unsubLink(g.unsub_url)}
       </div>
       <div class="reason">${fmt(g.count)} emails · <b>${fmt(g.would_delete)}</b> will be deleted
-        ${g.protected ? ` · kept anyway: ${kindChips(g.kinds)}` : ""}</div>
+        ${g.protected ? ` · protected (stays): ${kindChips(g.kinds)}` : ""}</div>
     </div>
     <ul class="d-list"><li class="muted">Loading…</li></ul>`);
   pane().querySelector("[data-rule]").onclick = () => ruleForSender(g);

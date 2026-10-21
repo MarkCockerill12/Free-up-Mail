@@ -56,6 +56,7 @@ DEFAULT_SETTINGS = {
     "keep_receipts": "1",
     "keep_shipping": "1",
     "backup": "1",  # save a local copy of every email before it goes to Trash
+    "backup_days": "0",  # delete backups older than this many days when the app starts (0 = keep)
     "auto_rules": "1",  # after each scan, run the rules marked "run automatically"
     "theme": "xp",  # xp | win10 | aero | minimal | dark
     "welcome_done": "0",

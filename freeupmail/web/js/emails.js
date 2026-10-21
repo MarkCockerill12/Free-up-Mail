@@ -21,8 +21,10 @@ export async function loadEmails(reset = true) {
 }
 
 export function emailsHead() {
-  return `<tr><th><input type="checkbox" id="check-all" title="Select all shown"></th><th>Status</th>
-    <th>From</th><th>Subject</th><th>${ui.status === "trashed" ? "Binned" : "Date"}</th>${ui.account ? "" : "<th>Account</th>"}</tr>`;
+  return `<tr><th data-col="pick"><input type="checkbox" id="check-all" title="Select all shown"></th>
+    <th data-col="status" title="What Clean up will do with this email">Status</th><th data-col="from">From</th>
+    <th data-col="subject">Subject</th><th data-col="date">${ui.status === "trashed" ? "Deleted on" : "Date"}</th>
+    ${ui.account ? "" : '<th data-col="account">Account</th>'}</tr>`;
 }
 
 function why(m) {
@@ -56,7 +58,8 @@ export function renderEmails() {
       ? "Nothing deleted by Free(up)Mail yet. Emails you clean up appear here, ready to restore." : "No emails match these filters."}</td></tr>`;
   const more = $("#more");
   more.innerHTML = `${fmt(items.length)} of ${fmt(total)} emails`
-    + (items.length < total ? ' <button id="load-more">Load more</button>' : "");
+    + (items.length < total ? ' <button id="load-more">Load more</button>' : "")
+    + (ui.status === "trashed" && total ? ' <button id="restore-all" class="good">Restore all</button> <span class="muted">or select some and press Restore</span>' : "");
   const all = $("#check-all");
   if (all) all.checked = items.length > 0 && items.every((m) => ui.selected.has(emailKey(m)));
 }

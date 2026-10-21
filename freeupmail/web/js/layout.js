@@ -3,7 +3,26 @@ import { $, $$ } from "./util.js";
 
 const KEY = "freeupmail.layout";
 const LIMITS = { left: [170, 480], right: [300, 1000] };
-const state = { lw: 250, rw: 470, left: true, right: true, panels: {} };
+const MIN_CENTRE = 460; // the list always keeps at least this much room
+// lw / rw stay null until you drag a divider, so the panes start in proportion to the window.
+const state = { lw: null, rw: null, left: true, right: true, panels: {} };
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/** Pane widths that fit the current window: your sizes when there is room, smaller ones when not. */
+function fitted() {
+  const W = window.innerWidth;
+  let lw = state.lw ?? clamp(Math.round(W * 0.17), 180, 260);
+  let rw = state.rw ?? clamp(Math.round(W * 0.32), 320, 540);
+  const room = W - MIN_CENTRE - 12;
+  const used = (state.left ? lw : 0) + (state.right ? rw : 0);
+  if (used > room) {
+    const scale = Math.max(0, room) / used;
+    lw = Math.max(LIMITS.left[0], Math.round(lw * scale));
+    rw = Math.max(LIMITS.right[0], Math.round(rw * scale));
+  }
+  return { lw, rw };
+}
 
 function load() {
   try { Object.assign(state, JSON.parse(localStorage.getItem(KEY)) || {}); } catch { /* storage unavailable */ }
@@ -14,8 +33,9 @@ function save() {
 
 function apply() {
   const app = $("#app");
-  app.style.setProperty("--lw-open", `${state.lw}px`);
-  app.style.setProperty("--rw-open", `${state.rw}px`);
+  const { lw, rw } = fitted();
+  app.style.setProperty("--lw-open", `${lw}px`);
+  app.style.setProperty("--rw-open", `${rw}px`);
   app.classList.toggle("left-collapsed", !state.left);
   app.classList.toggle("right-collapsed", !state.right);
   $("#btn-pane-left").classList.toggle("on", state.left);
@@ -34,13 +54,14 @@ function startDrag(ev, side) {
   if (ev.button !== 0 || ev.target.closest("button") || !state[side]) return;
   const splitter = ev.currentTarget;
   const startX = ev.clientX;
-  const startW = side === "left" ? state.lw : state.rw;
+  const startW = fitted()[side === "left" ? "lw" : "rw"];
   const [min, max] = LIMITS[side];
   splitter.setPointerCapture(ev.pointerId);
   document.body.classList.add("dragging");
   const move = (e) => {
     const dx = e.clientX - startX;
-    const limit = Math.min(max, window.innerWidth - 420);
+    const other = side === "left" ? (state.right ? fitted().rw : 0) : (state.left ? fitted().lw : 0);
+    const limit = Math.min(max, window.innerWidth - MIN_CENTRE - other);
     const w = Math.round(Math.max(min, Math.min(limit, side === "left" ? startW + dx : startW - dx)));
     state[side === "left" ? "lw" : "rw"] = w;
     apply();
@@ -59,6 +80,7 @@ export function initLayout() {
   load();
   if (window.innerWidth < 900) Object.assign(state, { left: false, right: false });
   apply();
+  window.addEventListener("resize", apply);
   $$(".splitter").forEach((sp) => {
     const side = sp.dataset.split;
     sp.addEventListener("pointerdown", (ev) => startDrag(ev, side));

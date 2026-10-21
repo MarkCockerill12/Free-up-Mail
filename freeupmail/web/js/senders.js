@@ -4,11 +4,14 @@ import { ui, filteredGroups } from "./state.js";
 const RENDER_LIMIT = 500;
 
 export function sendersHead() {
-  const col = (key, label, cls = "") => `<th data-sort="${key}" class="${cls}">${label}</th>`;
-  return `<tr><th><input type="checkbox" id="check-all" title="Select all shown"></th>
-    ${col("action", "Decision")}${col("label", ui.group === "domain" ? "Domain" : "Sender")}
-    ${col("count", "Emails", "num")}${col("would_delete", "Will delete", "num")}
-    ${col("protected", "Kept anyway")}${col("last_date", "Latest")}</tr>`;
+  const col = (key, label, cls = "", tip = "") => `<th data-sort="${key}" data-col="${key}" class="${cls}"${tip ? ` title="${tip}"` : ""}>${label}</th>`;
+  return `<tr><th data-col="pick"><input type="checkbox" id="check-all" title="Select all shown"></th>
+    ${col("action", "Decision", "", "What happens to this sender's emails when you clean up")}
+    ${col("label", ui.group === "domain" ? "Domain" : "Sender")}
+    ${col("count", "Emails", "num", "How many emails this sender has sent you")}
+    ${col("would_delete", "To Trash", "num", "How many of their emails Clean up will move to Trash (only when the decision is Delete)")}
+    ${col("protected", "Protected", "", "Their emails that are always kept, even if you delete the sender: receipts, security alerts, deliveries, starred, pinned or kept by a rule")}
+    ${col("last_date", "Latest", "", "Date of their newest email")}</tr>`;
 }
 
 export function renderSenders() {
@@ -70,7 +73,7 @@ export function senderStats(rows) {
     [fmt(sum((g) => g.count)), "emails"],
     [fmt(rows.length), ui.group === "domain" ? "domains" : "senders"],
     [fmt(rows.filter((g) => g.action === "DELETE").length), "marked delete"],
-    [fmt(sum((g) => g.would_delete)), "will be deleted", "del"],
-    [fmt(sum((g) => (g.action === "DELETE" ? g.count - g.would_delete : 0))), "kept from deleted senders", "prot"],
+    [fmt(sum((g) => g.would_delete)), "going to Trash", "del"],
+    [fmt(sum((g) => (g.action === "DELETE" ? g.count - g.would_delete : 0))), "protected from deleted senders", "prot"],
   ];
 }

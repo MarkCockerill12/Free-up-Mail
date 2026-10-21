@@ -102,7 +102,7 @@ function render() {
       <div>${s.is_contact ? '<span class="chip contact">you emailed them</span>' : ""}${s.unsub ? '<span class="chip">mailing list</span>' : ""}${s.spammy ? '<span class="chip">looks like spam</span>' : ""}</div>
       <div class="big"><div><b>${fmt(s.count)}</b><span>emails</span></div>
         <div><b>${fmt(s.deletable)}</b><span>would be deleted</span></div>
-        <div><b>${fmt(s.count - s.deletable)}</b><span>kept anyway</span></div></div>
+        <div><b>${fmt(s.count - s.deletable)}</b><span>protected (stays)</span></div></div>
       ${kept ? `<div>${kept}</div>` : ""}
       ${s.unsub_url ? `<a href="${esc(s.unsub_url)}" target="_blank" rel="noopener noreferrer">Unsubscribe from this sender ↗</a>` : ""}
       <ul class="r-subjects"><li class="muted">Loading…</li></ul>

@@ -65,6 +65,13 @@ def stats(db) -> dict:
     return {"count": count, "bytes": size, "folder": str(folder())}
 
 
+def prune_by_setting(db) -> int:
+    """Apply "keep backups for N days". Runs when the app starts, so a computer that was off
+    (or an app that was closed) catches up the next time it opens."""
+    days = int(store.get_settings(db, {"backup_days": "0"})["backup_days"] or 0)
+    return prune(db, days) if days > 0 else 0
+
+
 def prune(db, days: int) -> int:
     """Delete backups older than `days` (only ever the local copies). Returns how many went."""
     cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")

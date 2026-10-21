@@ -76,7 +76,8 @@ A rule has conditions and an action, like the filters in your email provider:
 
   Every action is checked against these ticks inside the app itself, not only by the buttons. An account starts with listing only.
 - **Never deleted without your say-so.** Everything is a suggestion until you press **Clean up** and confirm. Even then, emails go to Trash; nothing is permanently deleted.
-- **Backups.** Before an email is moved to Trash, a copy is saved on your computer as a standard `.eml` file. **Deleted (restorable)** in the sidebar can put it back, even after the Trash has been emptied, and any mail app can open these files.
+- **Backups.** Before an email is moved to Trash, a copy is saved on your computer as a standard `.eml` file. To get emails back, open **Deleted (restorable)** in the sidebar, then select emails and press **Restore**, or press **Restore all**. Emails still in Trash are moved back, and the rest are uploaded again from the backups, so this works even after the Trash has been emptied. Any mail app can also open the `.eml` files directly.
+- **Backups are kept as long as you like.** Under **Protection → Keep backups for**, choose forever, 30 days, 90 days, 6 months or a year. Older copies are removed each time Free(up)Mail starts, so nothing needs to run in the background while it's closed.
 - **Protected emails are never binned**, even if their sender is marked Delete or a rule says so:
   - people you've emailed
   - your own addresses
@@ -92,7 +93,7 @@ A rule has conditions and an action, like the filters in your email provider:
 
 ## Themes
 
-Pick a theme on the welcome screen or with **🎨 Theme**: Windows XP, Windows 10, Vista / 7 Aero, Minimal or Minimal Dark. Drag the dividers to resize the side panes and double-click a divider to hide a pane. Free(up)Mail remembers your layout.
+Pick a theme on the welcome screen or with **🎨 Theme**: Windows XP, Windows 10, Vista / 7 Aero, Minimal or Minimal Dark. Drag the dividers to resize the side panes and double-click a divider to hide a pane. Drag the edge of a column heading to resize that column, and double-click it to reset. The window and panes fit themselves to your screen: on smaller screens the toolbar shows icons only. Free(up)Mail remembers your layout.
 
 | | |
 | --- | --- |

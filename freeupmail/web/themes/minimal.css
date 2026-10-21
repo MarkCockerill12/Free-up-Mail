@@ -46,3 +46,7 @@ html[data-theme=minimal] dialog .content, html[data-theme=dark] dialog .content 
 html[data-theme=minimal] button.primary, html[data-theme=dark] button.primary { background: var(--link); color: #fff; border-color: var(--link); }
 html[data-theme=minimal] button.primary:hover:not(:disabled), html[data-theme=dark] button.primary:hover:not(:disabled) { background: var(--link-hover); }
 html[data-theme=minimal] .tour-hole, html[data-theme=dark] .tour-hole { border-radius: 10px; box-shadow: 0 0 0 3px var(--link); }
+html[data-theme=minimal] ::-webkit-scrollbar-button, html[data-theme=dark] ::-webkit-scrollbar-button { display: none; }
+html[data-theme=minimal] ::-webkit-scrollbar-thumb, html[data-theme=dark] ::-webkit-scrollbar-thumb { background-image: none; background-color: var(--scroll-thumb-color); }
+html[data-theme=minimal] { --scroll-thumb-color: #d4d4d8; }
+html[data-theme=dark] { --scroll-thumb-color: #3f3f46; }

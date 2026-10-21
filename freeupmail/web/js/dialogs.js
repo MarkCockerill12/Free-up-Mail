@@ -8,6 +8,8 @@ export function settingsDialog() {
   const s = ui.settings;
   const b = ui.backups || { count: 0, bytes: 0 };
   const opt = (v, label) => `<option value="${v}" ${s.keep_security === v ? "selected" : ""}>${label}</option>`;
+  const keepFor = [["0", "Forever"], ["30", "30 days"], ["90", "90 days"], ["180", "6 months"], ["365", "1 year"]]
+    .map(([v, label]) => `<option value="${v}" ${(s.backup_days || "0") === v ? "selected" : ""}>${label}</option>`).join("");
   modal(`<h2>Protection & backups</h2>
     <p class="note">When a sender is marked <b>Delete</b>, these emails from them are still kept.
       Starred/flagged emails, emails you pin or restore, "always keep" rules and anyone you've ever emailed are always kept.</p>
@@ -21,9 +23,11 @@ export function settingsDialog() {
       put back even after the Trash is emptied.</span></div>
     <div class="row"><label>Backups so far</label><span><b>${fmt(b.count)}</b> emails, ${sizeText(b.bytes)}</span>
       <button type="button" data-open="backups">Open folder</button></div>
-    <div class="row"><label>Free up space</label><select name="prune"><option value="">Keep all backups</option>
-      <option value="30">Delete backups older than 30 days</option><option value="90">… older than 90 days</option>
-      <option value="365">… older than a year</option></select></div>
+    <div class="row"><label>Keep backups for</label><select name="backup_days">${keepFor}</select>
+      <span class="note">Older copies are deleted each time Free(up)Mail starts (and now, when you save).</span></div>
+    <p class="note">To put emails back, open <b>Deleted (restorable)</b> in the sidebar, select them and press
+      <b>Restore</b>. Ones still in Trash are moved back; the rest are uploaded from these backups.
+      <button type="button" class="link" data-show-deleted>Show deleted emails</button></p>
     <h3>Rules</h3>
     <div class="row"><label>Run automatic rules after each scan</label><input type="checkbox" name="auto_rules" ${s.auto_rules === "1" ? "checked" : ""}>
       <span class="note">Only rules you marked "run automatically".</span></div>
@@ -31,20 +35,24 @@ export function settingsDialog() {
   async (_, f) => {
     if (f.backup.checked === false && s.backup === "1"
         && !confirm("Turn off backups? Emails deleted from now on can only be restored while they are still in Trash.")) return false;
-    if (f.prune.value && !confirm(`Delete the local backup copies older than ${f.prune.value} days? Emails in your mailboxes are not affected.`)) return false;
+    const days = Number(f.backup_days.value);
+    const shorter = days && (!Number(s.backup_days) || days < Number(s.backup_days));
+    if (shorter && !confirm(`Delete backup copies older than ${f.backup_days.selectedOptions[0].text}, now and from now on? `
+      + "Emails in your mailboxes are not affected, but older deleted emails can then only be restored while they are in Trash.")) return false;
     await api("/api/settings", {
       keep_security: f.keep_security.value, keep_receipts: f.keep_receipts.checked ? "1" : "0",
       keep_shipping: f.keep_shipping.checked ? "1" : "0", backup: f.backup.checked ? "1" : "0",
-      auto_rules: f.auto_rules.checked ? "1" : "0",
+      auto_rules: f.auto_rules.checked ? "1" : "0", backup_days: f.backup_days.value,
     });
-    if (f.prune.value) {
-      const { deleted } = await api("/api/backups/prune", { days: Number(f.prune.value) });
-      toast(`${fmt(deleted)} old backups deleted`);
+    if (days) {
+      const { deleted } = await api("/api/backups/prune", { days });
+      if (deleted) toast(`${fmt(deleted)} old backups deleted`);
     }
     await loadState();
     await ui.refresh();
   });
   document.querySelector("[data-open=backups]").onclick = () => api("/api/open-folder", { what: "backups" }).catch((e) => alert(e.message));
+  document.querySelector("[data-show-deleted]").onclick = () => { document.querySelector("#modal").close(); ui.showDeleted(); };
 }
 
 export async function cleanupDialog() {
@@ -99,7 +107,7 @@ export function shortcutsDialog() {
     <fieldset><legend>Panes</legend>
       Drag the dividers either side of the list to resize the panes. Double-click a divider, or use
       <b>Task pane</b> / <b>Preview</b> on the toolbar, to hide or show them. Click a section heading
-      in the task pane to fold it. Sizes are remembered.</fieldset>
+      in the task pane to fold it. Drag the edge of a column heading to resize that column (double-click it to reset). Sizes are remembered.</fieldset>
     <p class="note">Review mode: <kbd>D</kbd> delete, <kbd>K</kbd> keep, <kbd>S</kbd> skip, <kbd>B</kbd> back.</p>
     <div class="foot"><button value="cancel" class="primary">Close</button></div>`, async () => true);
 }

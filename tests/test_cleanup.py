@@ -125,12 +125,25 @@ def test_rules(db, gm, ya, ms, inbox):
     assert "b@friend" in ya.contents("INBOX") and all(m["gm"] != "333" for m in gm.folders["[Gmail]/Trash"].values())
 
 
+def test_backup_retention(db):
+    keep_days = store.get_settings(db, {"backup_days": "0"})["backup_days"]
+    assert keep_days == "0" and backup.prune_by_setting(db) == 0, "default keeps every backup"
+    old_path = db.execute("SELECT path FROM backups WHERE msg_id = 'o1'").fetchone()[0]
+    with db:
+        db.execute("UPDATE backups SET saved_at = '2020-01-01T00:00:00+00:00' WHERE msg_id = 'o1'")
+        db.execute("INSERT OR REPLACE INTO settings VALUES ('backup_days', '30')")
+    before = db.execute("SELECT COUNT(*) FROM backups").fetchone()[0]
+    assert backup.prune_by_setting(db) == 1 and not Path(old_path).exists()
+    assert db.execute("SELECT COUNT(*) FROM backups").fetchone()[0] == before - 1
+
+
 def main():
     db, gm, ya, ms, inbox, archive = setup()
     test_permissions_block_everything(db, gm, ya, ms)
     test_cleanup_with_backups(db, gm, ya, ms, inbox, archive)
     test_restore(db, gm, ya, ms, inbox, archive)
     test_rules(db, gm, ya, ms, inbox)
+    test_backup_retention(db)
     print("cleanup/backups/restore/rules: all checks passed")
 
 

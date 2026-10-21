@@ -13,6 +13,7 @@ import { syncTheme, themeMenu } from "./theme.js";
 import { welcome, startTour } from "./tour.js";
 import { initLayout, setPane } from "./layout.js";
 import { screenshot } from "./shots.js";
+import { applyColumns, initColumns } from "./columns.js";
 
 const narrow = () => window.innerWidth < 900;
 
@@ -30,6 +31,7 @@ function render() {
   $("#group").hidden = $("#lbl-unsub").hidden = $("#lbl-min").hidden = !senders;
   $("#lbl-unread").hidden = senders;
   $("#list thead").innerHTML = senders ? sendersHead() : emailsHead();
+  applyColumns(ui.view);
   const stats = senders ? senderStats(renderSenders()) : (renderEmails(), emailStats());
   const status = ui.jobRunning ? "Working…" : ui.selected.size ? `${fmt(ui.selected.size)} selected` : "Ready";
   $("#stats").innerHTML = `<div class="sb-cell grow">${status}</div>`
@@ -143,6 +145,13 @@ async function pinEmails(pinned) {
   toast(`${fmt(items.length)} email${items.length > 1 ? "s" : ""} ${pinned ? "pinned — never cleaned up" : "unpinned"}`);
   await refresh();
 }
+
+ui.showDeleted = async () => {
+  ui.view = "emails";
+  ui.status = "trashed";
+  resetList();
+  await reloadList();
+};
 
 function restore(items) {
   ui.startJob("/api/restore", { items });
@@ -304,6 +313,9 @@ function wire() {
   });
   $("#more").addEventListener("click", async (ev) => {
     if (ev.target.id === "load-more") { await loadEmails(false); render(); }
+    if (ev.target.id === "restore-all" && confirm(`Put all ${fmt(ui.emails.total)} deleted emails${ui.account ? ` in ${ui.account}` : ""} back in the Inbox?`)) {
+      startJob("/api/restore", { all: true, account: ui.account || null });
+    }
   });
   $("#bulk").addEventListener("click", async (ev) => {
     const act = ev.target.dataset.bulk;
@@ -364,6 +376,7 @@ function locked() {
 
 async function init() {
   initLayout();
+  initColumns(() => ui.view);
   if (!KEY) { locked(); return; }
   wire();
   closeDetail();
