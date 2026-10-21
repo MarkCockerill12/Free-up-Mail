@@ -7,6 +7,7 @@ Connect-MgGraph uses), so no app registration is needed.
 
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -101,7 +102,15 @@ def finish_sign_in(flow: dict, log: Log) -> bool:
     return False
 
 
+_refresh_lock = threading.Lock()
+
+
 def _access_token() -> str:
+    with _refresh_lock:  # backups fetch in parallel: only one of them refreshes the sign-in
+        return _fresh_token()
+
+
+def _fresh_token() -> str:
     saved = connected()
     if not saved:
         raise RuntimeError("Outlook is not connected")

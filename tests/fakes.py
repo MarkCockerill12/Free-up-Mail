@@ -57,7 +57,11 @@ class FakeGmail:
     def uid(self, cmd, *args):
         box = self.folders[self.current]
         if cmd == "SEARCH":
-            return "OK", [" ".join(map(str, box)).encode()]
+            uids = list(box)
+            if args[0] == "X-GM-RAW" and "rfc822msgid:" in args[1]:
+                rfc = args[1].strip('"').split("rfc822msgid:")[1]
+                uids = [u for u in uids if box[u]["rfc"] == rfc]
+            return "OK", [" ".join(map(str, uids)).encode()]
         if cmd == "FETCH":
             uids = [int(u) for u in args[0].split(",")]
             return "OK", _fetch_reply(uids, box, args[1], lambda u: f"X-GM-MSGID {box[u]['gm']} ")
@@ -90,6 +94,8 @@ class FakeIMAP:
                         for n, (name, msgs) in enumerate(folders.items(), 7)}
         self.current = None
         self.appended = []
+        self.refuse: set[str] = set()  # Message-IDs the server refuses to accept back
+        self.fail_after_moves: int | None = None  # drop the connection after this many moves
 
     def list(self):
         return "OK", [f'(\\HasNoChildren) "." {imapmail.quote(n)}'.encode() for n in self.folders]
@@ -113,6 +119,8 @@ class FakeIMAP:
     def append(self, mailbox, flags, when, raw):
         f = self.folders[mailbox]
         rfc = re.search(rb"Message-ID: <([^>]+)>", raw)[1].decode()
+        if rfc in self.refuse:
+            return "NO", [b"[OVERQUOTA] mailbox full"]
         f["msgs"][f["next"]] = {"rfc": rfc, "raw": raw, "flags": {"\\Seen"} if flags else set()}
         f["next"] += 1
         self.appended.append(rfc)
@@ -125,10 +133,17 @@ class FakeIMAP:
             if args[0] == "UID":
                 start = int(args[1].split(":")[0])
                 uids = [u for u in uids if u >= start] or uids[-1:]
+            if args[0] == "HEADER":
+                rfc = args[2].strip('"').strip("<>")
+                uids = [u for u in uids if box[u]["rfc"] == rfc]
             return "OK", [" ".join(map(str, uids)).encode()]
         if cmd == "FETCH":
             return "OK", _fetch_reply([int(x) for x in args[0].split(",")], box, args[1])
         if cmd == "COPY":
+            if self.fail_after_moves is not None:
+                if self.fail_after_moves == 0:
+                    raise OSError("connection reset by peer")
+                self.fail_after_moves -= 1
             dest = self.folders[imapmail.plain(args[1])]
             for u in map(int, args[0].split(",")):
                 dest["msgs"][dest["next"]] = dict(box[u], flags=set(box[u]["flags"]))

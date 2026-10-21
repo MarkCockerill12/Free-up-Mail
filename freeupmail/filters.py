@@ -86,6 +86,14 @@ def gmail_filter(rule: dict) -> list[tuple[str, str]] | None:
     return [("hasTheWord", query), *props]
 
 
+def gmail_filter_protected(rule: dict, protect: str) -> list[tuple[str, str]] | None:
+    """gmail_filter, plus your Protection words for rules that bin mail (as the app does)."""
+    props = gmail_filter(rule)
+    if props and rule["action"] == "trash" and protect:
+        props.append(("doesNotHaveTheWord", protect))
+    return props
+
+
 OUTLOOK_KEYS = {"from": "senderContains", "domain": "senderContains", "subject": "subjectContains"}
 
 
@@ -136,9 +144,9 @@ def _entry(props: list[tuple[str, str]]) -> str:
 
 def gmail_xml(db, account: str) -> str:
     """Gmail's filter import file: your rules that Gmail can express, then the senders marked Delete."""
-    entries = [_entry(props) for r in _own_rules(db, account) if (props := gmail_filter(r))]
-    addrs = deleted_senders(db, account)
     protect = _protect_query(store.get_settings(db, rules.DEFAULT_SETTINGS))
+    entries = [_entry(props) for r in _own_rules(db, account) if (props := gmail_filter_protected(r, protect))]
+    addrs = deleted_senders(db, account)
     for chunk in _chunks(addrs):
         props = [("from", " OR ".join(chunk)), ("shouldTrash", "true")]
         if protect:
@@ -159,7 +167,15 @@ def outlook_rules(db, log) -> None:
     account = outlook.connected()["email"]
     perms.require(db, account, "server_rules")
     addrs = deleted_senders(db, account)
-    own = [o for r in _own_rules(db, account) if (o := outlook_rule(r))]
+    words = protect_words(store.get_settings(db, rules.DEFAULT_SETTINGS))
+    own = []
+    for r in _own_rules(db, account):
+        o = outlook_rule(r)
+        if not o:
+            continue
+        if r["action"] == "trash" and words:  # binning rules keep your Protection words, as the app does
+            o["exceptions"].setdefault("subjectContains", []).extend(words)
+        own.append(o)
     log(f"== {account}: creating {len(own)} of your rules and rules for {len(addrs)} senders marked Delete")
     outlook_write.apply_rules(addrs, protect_words(store.get_settings(db, rules.DEFAULT_SETTINGS)), log, own)
     log("rules saved in Outlook (Settings -> Mail -> Rules, named 'Free(up)Mail N')")

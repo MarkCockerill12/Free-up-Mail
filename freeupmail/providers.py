@@ -85,12 +85,17 @@ class Mailbox:
             return outlook.fetch_message(msg_id)
         return module(self.cfg).fetch_message(self.cfg, msg_id)
 
+    def _expected(self, items) -> dict[str, str]:
+        """{msg_id: Message-ID} from the last scan, so IMAP servers can be re-checked."""
+        rows = self.db.execute("SELECT msg_id, rfc_id FROM messages WHERE account = ?", (self.email,))
+        return {m: r or "" for m, r in rows if m in items}
+
     def trash(self, items: dict[str, int], log, keep=None) -> dict[str, str]:
         """{msg_id: uid} to Trash; `keep` saves a backup of each first (needs "read")."""
         self._need("trash", *(("read",) if keep else ()))
         if self.kind == "outlook":
             return outlook_write.trash(list(items), log, keep)
-        return writer(self.cfg).trash(self.cfg, items, log, keep)
+        return writer(self.cfg).trash(self.cfg, items, log, keep, self._expected(items))
 
     def restore(self, trash_ids: list[str], log) -> dict[str, str]:
         self._need("trash")
@@ -98,14 +103,24 @@ class Mailbox:
             return outlook_write.restore(trash_ids, log)
         return writer(self.cfg).restore(self.cfg, trash_ids, log)
 
-    def upload(self, emails: list[tuple[bytes, int]], log) -> int:
+    def upload(self, emails: list[tuple[bytes, int]], log) -> list[int]:
+        """Positions of `emails` that were put back."""
         self._need("trash")
         if self.kind == "outlook":
             return outlook_write.upload(emails, log)
         return writer(self.cfg).upload(self.cfg, emails, log)
 
+    def present(self, rfc_ids: list[str], log) -> set[str]:
+        """Message-IDs already back in the mailbox (so a backup isn't uploaded twice)."""
+        self._need("scan", change=False)
+        if self.demo or not rfc_ids:
+            return set()
+        if self.kind == "outlook":
+            return outlook_write.present(rfc_ids, log)
+        return writer(self.cfg).present(self.cfg, rfc_ids, log)
+
     def organise(self, action: str, items: dict[str, int], folder: str, mark_read: bool, log) -> int:
         self._need("organise")
         if self.kind == "outlook":
             return outlook_write.organise(action, list(items), folder, mark_read, log)
-        return writer(self.cfg).organise(self.cfg, action, items, folder, mark_read, log)
+        return writer(self.cfg).organise(self.cfg, action, items, folder, mark_read, log, self._expected(items))

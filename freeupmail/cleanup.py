@@ -90,19 +90,22 @@ def run_restore(items: list[list[str]], log: Log) -> None:
             in_trash = {new: old for old, new, _ in rows if new}
             back = box.restore(list(in_trash), log) if in_trash else {}
             done = {in_trash[t]: new for t, new in back.items()}  # original id -> id in Inbox
-            from_backup = []
-            for old, _, _ in rows:
-                if old not in done and (copy := backup.load(db, acc, old)):
-                    from_backup.append((old, copy))
+            rfc = {old: r for old, _, r in rows}
+            # Not in Trash any more: already put back by hand (leave it), else upload the backup.
+            gone = [old for old, _, _ in rows if old not in done]
+            already = box.present([rfc[o] for o in gone if rfc[o]], log) if gone else set()
+            if already:
+                log(f"  {len(already)} are already back in the mailbox, so they were left as they are")
+            done.update({old: "" for old in gone if rfc[old] in already})
+            from_backup = [(old, copy) for old in gone if old not in done and (copy := backup.load(db, acc, old))]
             if from_backup:
                 log(f"  {len(from_backup)} are no longer in Trash: putting them back from the backups")
-                box.upload([c for _, c in from_backup], log)
-                done.update({old: "" for old, _ in from_backup})
+                uploaded = box.upload([c for _, c in from_backup], log)
+                done.update({from_backup[n][0]: "" for n in uploaded})
         except perms.NotAllowed as exc:
             log(f"skipped: {exc}")
             continue
         lost = len(rows) - len(done)
-        rfc = {old: r for old, _, r in rows}
         with db:
             db.executemany("UPDATE trashed SET restored = 1 WHERE account = ? AND msg_id = ?", [(acc, m) for m in done])
             db.executemany("INSERT OR IGNORE INTO pinned VALUES (?, ?)", [(acc, new) for new in done.values() if new])

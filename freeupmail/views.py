@@ -201,17 +201,21 @@ def cleanup_plan(db, account: str | None = None) -> dict[str, dict[str, int]]:
 def rule_plan(db, rule: dict, ctx: Context | None = None) -> dict[str, dict[str, int]]:
     """{account: {msg_id: uid}} that a rule would act on now. A rule that bins mail never
     touches protected email: contacts, your own addresses, starred/pinned/restored,
-    "always keep" rules and the kinds kept under Protection."""
+    "always keep" rules and the kinds kept under Protection. Junk counts as binning."""
     ctx = ctx or Context(db)
     plan: dict[str, dict[str, int]] = {}
     for row in iter_rows(db):
         if row["from_addr"] in ctx.own or not automation.matches(rule, row, ctx.now):
             continue
-        if rule["action"] == "trash" and (
+        action = rule["action"]
+        # Junk counts as binning: spam folders empty themselves (Gmail after 30 days).
+        if action in ("trash", "junk") and (
                 row["from_addr"] in ctx.contacts or row_status(row, "DELETE", ctx) != "delete"):
             continue
-        if rule["action"] == "read" and row["seen"]:
+        if (action == "read" and row["seen"]) or (action == "star" and "starred" in row["labels"]):
             continue
+        if action == "archive" and "inbox" not in row["labels"]:
+            continue  # archiving only ever takes emails out of the inbox
         plan.setdefault(row["account"], {})[row["msg_id"]] = row["uid"]
     return plan
 

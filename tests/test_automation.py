@@ -69,6 +69,10 @@ def main():
                                                    action="junk"))["conditions"], {"senderContains": ["a", "b"]})
     check("outlook all same field", filters.outlook_rule(rule(("from", "contains", "a"), ("from", "contains", "b"))), None)
     check("outlook star", filters.outlook_rule(rule(("from", "contains", "a"), action="star")), None)
+    binning = filters.gmail_filter_protected(rule(("from", "contains", "shop"), action="trash"), "subject:(receipt)")
+    check("gmail trash keeps protection", binning[-1], ("doesNotHaveTheWord", "subject:(receipt)"))
+    moving = filters.gmail_filter_protected(rule(("from", "contains", "shop")), "subject:(receipt)")
+    check("gmail move unchanged", moving[-1], ("shouldArchive", "true"))
     print("rules engine: all checks passed")
 
 

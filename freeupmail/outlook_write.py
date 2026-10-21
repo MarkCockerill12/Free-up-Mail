@@ -6,6 +6,8 @@ import base64
 import email
 import email.policy
 import email.utils
+import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
@@ -20,28 +22,41 @@ RULE_CHUNK = 40
 
 
 def _move_batch(msg_ids: list[str], destination: str, log: Log, verb: str) -> dict[str, str]:
-    """Move messages 20 per Graph batch. Returns {old id: new id} for those moved."""
+    """Move messages 20 per Graph batch. Returns {old id: new id} for those moved, also
+    when the connection fails part-way. Requests Microsoft asks to slow down are retried."""
     moved: dict[str, str] = {}
-    for i in range(0, len(msg_ids), 20):
-        chunk = msg_ids[i : i + 20]
-        requests = [{
-            "id": str(n), "method": "POST", "url": f"/me/messages/{outlook._quote(mid)}/move",
-            "body": {"destinationId": destination}, "headers": {"Content-Type": "application/json"},
-        } for n, mid in enumerate(chunk)]
-        result = outlook.graph("POST", "/$batch", {"requests": requests})
-        for resp in result.get("responses", []):
-            if resp.get("status") in (200, 201):
-                moved[chunk[int(resp["id"])]] = (resp.get("body") or {}).get("id", "")
-        if (i // 20) % 10 == 0 or i + 20 >= len(msg_ids):
-            log(f"  {verb} {len(moved)}/{len(msg_ids)}")
+    try:
+        for i in range(0, len(msg_ids), 20):
+            pending = msg_ids[i : i + 20]
+            for attempt in range(4):
+                requests = [{
+                    "id": str(n), "method": "POST", "url": f"/me/messages/{outlook._quote(mid)}/move",
+                    "body": {"destinationId": destination}, "headers": {"Content-Type": "application/json"},
+                } for n, mid in enumerate(pending)]
+                result = outlook.graph("POST", "/$batch", {"requests": requests})
+                retry = []
+                for resp in result.get("responses", []):
+                    mid = pending[int(resp["id"])]
+                    if resp.get("status") in (200, 201):
+                        moved[mid] = (resp.get("body") or {}).get("id", "")
+                    elif resp.get("status") in (429, 503, 504):
+                        retry.append(mid)
+                if not retry:
+                    break
+                pending = retry
+                time.sleep(2 * (attempt + 1))
+            if (i // 20) % 10 == 0 or i + 20 >= len(msg_ids):
+                log(f"  {verb} {len(moved)}/{len(msg_ids)}")
+    except (RuntimeError, OSError) as exc:
+        log(f"  stopped early ({exc}); {len(moved)} were done and are recorded")
     return moved
 
 
 def _mime(msg_id: str) -> bytes | None:
     try:
         return outlook.graph_raw(f"/me/messages/{outlook._quote(msg_id)}/$value")
-    except RuntimeError:
-        return None
+    except (RuntimeError, OSError):
+        return None  # not backed up, so it isn't moved either
 
 
 def trash(msg_ids: list[str], log: Log, keep=None) -> dict[str, str]:
@@ -109,14 +124,33 @@ def _message_json(raw: bytes, seen: int) -> dict:
     return data
 
 
-def upload(emails: list[tuple[bytes, int]], log: Log) -> int:
-    """Put backed-up emails (raw source, seen flag) back into the Inbox."""
-    done = 0
-    for raw, seen in emails:
-        outlook.graph("POST", "/me/mailFolders/inbox/messages", _message_json(raw, seen))
-        done += 1
-    log(f"  put back {done} from backups")
+def upload(emails: list[tuple[bytes, int]], log: Log) -> list[int]:
+    """Put backed-up emails (raw source, seen flag) back into the Inbox. Returns the
+    positions that were uploaded, so a failure part-way loses nothing."""
+    done: list[int] = []
+    for n, (raw, seen) in enumerate(emails):
+        try:
+            outlook.graph("POST", "/me/mailFolders/inbox/messages", _message_json(raw, seen))
+        except (RuntimeError, OSError) as exc:
+            log(f"  one email could not be put back: {exc}")
+            continue
+        done.append(n)
+    log(f"  put back {len(done)} from backups")
     return done
+
+
+def present(rfc_ids: list[str], log: Log) -> set[str]:
+    """Which of these Message-IDs are already back in the mailbox (outside Deleted Items)."""
+    found: set[str] = set()
+    deleted = outlook._folder_id("deleteditems")
+    for rfc in rfc_ids:
+        if not rfc or "'" in rfc:
+            continue
+        query = urllib.parse.quote(f"internetMessageId eq '<{rfc}>'")
+        hits = outlook.graph("GET", f"/me/messages?$filter={query}&$select=id,parentFolderId").get("value", [])
+        if any(h.get("parentFolderId") != deleted for h in hits):
+            found.add(rfc)
+    return found
 
 
 def _folder_by_name(name: str) -> str:

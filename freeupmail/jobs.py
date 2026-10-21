@@ -18,8 +18,11 @@ def scan(body: dict) -> dict:
             if not box.can("scan"):
                 log(f"{email}: skipped - listing emails is not allowed for this account (Accounts → Permissions)")
                 continue
-            if box.scan(log):
-                scanned.add(email)
+            try:
+                if box.scan(log):
+                    scanned.add(email)
+            except Exception as exc:  # noqa: BLE001 - one account failing must not stop the others
+                log(f"{email}: scan failed ({exc}); the other accounts carry on")
         if scanned and store.get_settings(db, {"auto_rules": "1"})["auto_rules"] == "1":
             cleanup.run_rules(None, log, accounts=scanned, auto_only=True)
 

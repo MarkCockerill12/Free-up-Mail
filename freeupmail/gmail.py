@@ -1,6 +1,7 @@
 """Gmail over IMAP, using Gmail's extensions on top of imapmail: one scan of All Mail,
 its categories (Promotions, Social...) and X-GM-MSGID ids, which survive moves."""
 
+import imaplib
 import re
 
 from . import imapmail, imapwrite, store
@@ -84,10 +85,10 @@ def _confirmed(imap, items: dict[str, int], uids: list[str]) -> dict[str, str]:
     return {u: m for u, m in _msgids(imap, uids).items() if items.get(m) == int(u)}
 
 
-def trash(account: dict, items: dict[str, int], log: Log = print, keep=None) -> dict[str, str]:
+def trash(account: dict, items: dict[str, int], log: Log = print, keep=None, expected=None) -> dict[str, str]:
     """Move {msgid: uid} from All Mail to Trash. A message only moves when its X-GM-MSGID
     still matches the cached one and (with `keep`) its backup copy is saved.
-    Returns {msgid: msgid} for what moved."""
+    Returns {msgid: msgid} for what moved, also when the connection drops part-way."""
     imap = imapmail.login(account)
     moved: dict[str, str] = {}
     try:
@@ -101,9 +102,25 @@ def trash(account: dict, items: dict[str, int], log: Log = print, keep=None) -> 
                 imapwrite.move(imap, ok, trash_folder)
                 moved.update({confirmed[str(u)]: confirmed[str(u)] for u in ok})
             log(f"  trashed {len(moved)}/{len(uids)}")
+    except (imaplib.IMAP4.error, OSError, RuntimeError) as exc:
+        log(f"  stopped early ({exc}); {len(moved)} were moved and are recorded")
     finally:
-        imap.logout()
+        imapwrite.logout(imap)
     return moved
+
+
+def present(account: dict, rfc_ids: list[str], log: Log = print) -> set[str]:
+    """Which of these Message-IDs are already back in the mailbox (outside Trash)."""
+    found: set[str] = set()
+    imap = imapmail.login(account)
+    try:
+        select(imap, find_folder(imap, b"\\All"), readonly=True)
+        for rfc in rfc_ids:
+            if rfc and '"' not in rfc and search_uids(imap, "X-GM-RAW", f'"rfc822msgid:{rfc}"'):
+                found.add(rfc)
+    finally:
+        imapwrite.logout(imap)
+    return found
 
 
 upload = imapwrite.upload
@@ -114,7 +131,7 @@ def _label(name: str) -> str:
 
 
 def organise(account: dict, action: str, items: dict[str, int], folder: str = "",
-             mark_read: bool = False, log: Log = print) -> int:
+             mark_read: bool = False, log: Log = print, expected=None) -> int:
     """Rule actions in Gmail terms: "move" adds the label and takes the email out of the
     Inbox (Gmail's own Move to), "archive" only takes it out of the Inbox."""
     imap = imapmail.login(account)
@@ -141,8 +158,10 @@ def organise(account: dict, action: str, items: dict[str, int], folder: str = ""
                 imapwrite.move(imap, confirmed, junk)
             done += len(confirmed)
         log(f"  {done} emails done")
+    except (imaplib.IMAP4.error, OSError, RuntimeError) as exc:
+        log(f"  stopped early ({exc}); {done} were done")
     finally:
-        imap.logout()
+        imapwrite.logout(imap)
     return done
 
 
@@ -163,6 +182,8 @@ def restore(account: dict, msg_ids: list[str], log: Log = print) -> dict[str, st
             imapwrite.move(imap, chunk, "INBOX")
             restored.update({found[u]: found[u] for u in chunk})
             log(f"  restored {len(restored)}/{len(found)}")
+    except (imaplib.IMAP4.error, OSError, RuntimeError) as exc:
+        log(f"  stopped early ({exc}); {len(restored)} were restored")
     finally:
-        imap.logout()
+        imapwrite.logout(imap)
     return restored

@@ -171,6 +171,7 @@ python -m tests.test_rules        # junk / receipt / security classification
 python -m tests.test_automation   # rule matching and Gmail / Outlook translation
 python -m tests.test_cleanup      # permissions, backups, cleanup, restore, rules
 python -m tests.test_server       # the local server's key, host and port checks
+python -m tests.test_safety       # changed emails, dropped connections, failed uploads
 ```
 
 To build the single-file versions:
