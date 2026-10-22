@@ -13,6 +13,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from . import store
@@ -24,7 +26,8 @@ AUTH = "https://login.microsoftonline.com/common/oauth2/v2.0"
 LEGACY_AUTH = "https://login.microsoftonline.com/consumers/oauth2/v2.0"
 GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = "offline_access User.Read Mail.ReadWrite MailboxSettings.ReadWrite"
-TOKEN_PATH = store.APP_DIR / "outlook_token.json"
+TOKENS_PATH = store.APP_DIR / "outlook_tokens.json"  # {email: sign-in token}, one per account
+OLD_TOKEN_PATH = store.APP_DIR / "outlook_token.json"  # from when only one account was possible
 SKIP_FOLDERS = ("deleteditems", "junkemail", "sentitems", "drafts", "outbox")
 INLINE_IMAGE_LIMIT = 3_000_000
 CID_RE = re.compile(r"cid:([^\"'\s)>]+)", re.IGNORECASE)
@@ -41,28 +44,86 @@ def _post_form(url: str, data: dict) -> dict:
         return json.load(exc)
 
 
-# ---------- sign-in ----------
+# ---------- accounts & sign-in ----------
+
+# Which Outlook account the Graph calls on this thread are for (see use()).
+_account: ContextVar[str] = ContextVar("outlook_account", default="")
+_tokens_lock = threading.RLock()
+
+
+def _tokens() -> dict[str, dict]:
+    with _tokens_lock:
+        if OLD_TOKEN_PATH.exists() and not TOKENS_PATH.exists():
+            old = json.loads(OLD_TOKEN_PATH.read_text(encoding="utf-8"))
+            store.write_private(TOKENS_PATH, json.dumps({old["email"]: old} if old.get("email") else {}))
+            OLD_TOKEN_PATH.unlink()
+        if not TOKENS_PATH.exists():
+            return {}
+        return json.loads(TOKENS_PATH.read_text(encoding="utf-8"))
+
+
+def accounts() -> list[str]:
+    """Every signed-in Outlook account."""
+    return sorted(_tokens())
+
+
+@contextmanager
+def use(email: str):
+    """Run the Graph calls inside this block as `email`."""
+    reset = _account.set(email)
+    try:
+        yield
+    finally:
+        _account.reset(reset)
+
+
+def bound(fn):
+    """`fn` for a worker thread, which doesn't inherit the account chosen with use()."""
+    email = current()
+
+    def run(*args):
+        with use(email):
+            return fn(*args)
+    return run
+
+
+def current() -> str:
+    email = _account.get()
+    if email:
+        return email
+    known = accounts()
+    if len(known) == 1:
+        return known[0]
+    raise RuntimeError("Outlook is not connected" if not known else "No Outlook account chosen for this call")
+
 
 def connected() -> dict | None:
-    if not TOKEN_PATH.exists():
+    """The current account's sign-in, if there is one."""
+    try:
+        return _tokens().get(current())
+    except RuntimeError:
         return None
-    return json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
 
 
-def disconnect() -> None:
-    TOKEN_PATH.unlink(missing_ok=True)
+def disconnect(email: str) -> None:
+    with _tokens_lock:
+        tokens = _tokens()
+        tokens.pop(email, None)
+        store.write_private(TOKENS_PATH, json.dumps(tokens))
 
 
-def _save_token(tok: dict, email: str | None = None) -> None:
-    saved = connected() or {"authority": AUTH}
-    saved.update({
-        "access_token": tok["access_token"],
-        "refresh_token": tok.get("refresh_token", saved.get("refresh_token")),
-        "expires_at": time.time() + int(tok.get("expires_in", 3600)),
-    })
-    if email:
-        saved["email"] = email
-    store.write_private(TOKEN_PATH, json.dumps(saved))
+def _save_token(tok: dict, email: str) -> None:
+    with _tokens_lock:
+        tokens = _tokens()
+        saved = tokens.get(email) or {"authority": AUTH}
+        saved.update({
+            "email": email,
+            "access_token": tok["access_token"],
+            "refresh_token": tok.get("refresh_token", saved.get("refresh_token")),
+            "expires_at": time.time() + int(tok.get("expires_in", 3600)),
+        })
+        tokens[email] = saved
+        store.write_private(TOKENS_PATH, json.dumps(tokens))
 
 
 def start_sign_in() -> dict:
@@ -73,7 +134,9 @@ def start_sign_in() -> dict:
     return flow
 
 
-def finish_sign_in(flow: dict, log: Log) -> bool:
+def finish_sign_in(flow: dict, log: Log) -> str:
+    """Waits for the user to approve; returns the signed-in address ("" if it failed).
+    Another account is added alongside the ones already connected."""
     deadline = time.time() + int(flow.get("expires_in", 900))
     interval = int(flow.get("interval", 5))
     log(f"waiting for sign-in with code {flow['user_code']} at {flow['verification_uri']}")
@@ -85,21 +148,22 @@ def finish_sign_in(flow: dict, log: Log) -> bool:
             "device_code": flow["device_code"],
         })
         if "access_token" in tok:
-            disconnect()  # a fresh sign-in replaces any older account's token
-            _save_token(tok)
-            me = graph("GET", "/me?$select=userPrincipalName,mail")
+            req = urllib.request.Request(f"{GRAPH}/me?$select=userPrincipalName,mail",
+                                         headers={"Authorization": f"Bearer {tok['access_token']}"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                me = json.load(resp)
             email = (me.get("mail") or me.get("userPrincipalName") or "outlook").lower()
             _save_token(tok, email)
             log(f"signed in as {email}")
-            return True
+            return email
         error = tok.get("error")
         if error == "slow_down":
             interval += 5
         elif error != "authorization_pending":
             log(f"sign-in failed: {tok.get('error_description', tok)}")
-            return False
+            return ""
     log("sign-in code expired - click Connect Outlook again")
-    return False
+    return ""
 
 
 _refresh_lock = threading.Lock()
@@ -122,7 +186,7 @@ def _fresh_token() -> str:
     })
     if "access_token" not in tok:
         raise RuntimeError(f"Outlook sign-in expired, reconnect: {tok.get('error_description', tok)}")
-    _save_token(tok)
+    _save_token(tok, saved["email"])
     return tok["access_token"]
 
 
@@ -189,7 +253,7 @@ def _quote(msg_id: str) -> str:
 # ---------- scan ----------
 
 def scan(db, log: Log) -> None:
-    account = connected()["email"]
+    account = current()
     now = datetime.now(UTC).isoformat(timespec="seconds")
     log(f"== scanning {account}")
     counts: dict[str, int] = {}

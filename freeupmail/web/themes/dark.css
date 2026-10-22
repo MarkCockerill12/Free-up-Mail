@@ -2,8 +2,8 @@
    Emails themselves still show on white, the way their senders designed them. */
 html[data-theme=dark] {
   color-scheme: dark;
-  --font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --title-font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font: 13px/1.5 "FreeUpMail Emoji", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --title-font: 600 14px "FreeUpMail Emoji", system-ui, -apple-system, "Segoe UI", sans-serif;
   --face: #18181b; --face-dark: #27272a; --shadow: #303036; --white: #1f1f23; --hi: transparent;
   --text: #e4e4e7; --text-2: #d4d4d8; --muted: #a1a1aa; --link: #7aa2ff; --link-hover: #a5c0ff; --h3: #e4e4e7;
   --select: #3b5bdb; --select-fg: #ffffff; --select-soft: #232a3d; --field-border: #34343a; --field-bg: #141417;

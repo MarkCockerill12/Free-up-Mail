@@ -28,6 +28,8 @@ The first time it runs, a welcome screen and a short guided tour show you around
 - **macOS:** right-click the file and choose **Open**. If it is still blocked, run `xattr -d com.apple.quarantine FreeUpMail-macos` and then `chmod +x FreeUpMail-macos`.
 - **Linux:** run `chmod +x FreeUpMail-linux`.
 
+**Updates:** when it opens, Free(up)Mail asks GitHub whether a newer release exists (turn this off under **Protection**, or check any time from **? → Check for updates**). The standalone app updates itself: it downloads the new version, checks it is exactly the published file, swaps it in and restarts, and the old copy is deleted. The `.pyz` and source runs show you where to download it.
+
 **Try it without connecting anything:** start it with `--demo` (for example `FreeUpMail-windows.exe --demo`). This opens made-up mailboxes, so you can explore every screen; nothing real is read or changed.
 
 ## How it works
@@ -110,7 +112,7 @@ Open **Accounts** on the toolbar.
 
 | Provider | How it connects |
 | --- | --- |
-| Outlook.com, Hotmail, Live, Microsoft 365 | **Connect Outlook**: sign in on Microsoft's own page with a one-time code. Only a sign-in token is stored, never your password. |
+| Outlook.com, Hotmail, Live, Microsoft 365 | **Connect Outlook**: sign in on Microsoft's own page with a one-time code. Only a sign-in token is stored, never your password. Add as many Outlook accounts as you like: choose "Use another account" on Microsoft's page. |
 | Gmail / Google Workspace | Email + an [app password](https://myaccount.google.com/apppasswords) (2-Step Verification must be on). |
 | Yahoo, iCloud, AOL, GMX, Zoho, Fastmail, Yandex… | Email + an app password from the provider's security settings. Free(up)Mail fills in the server automatically. |
 | Anything else (your own domain, work mail…) | Email + password. If `imap.<your domain>` isn't the right server, enter it under **Server settings**. |
@@ -146,7 +148,7 @@ To store it somewhere else, such as a USB stick, set the `FREEUPMAIL_HOME` envir
 
 What's in the folder:
 - `accounts.json`: IMAP accounts and their app passwords.
-- `outlook_token.json`: the Microsoft sign-in token.
+- `outlook_tokens.json`: the Microsoft sign-in tokens, one per Outlook account.
 - `mail.db`: the list of emails (headers only) and your decisions and rules.
 - `backups/`: the `.eml` copies.
 
@@ -172,6 +174,8 @@ python -m tests.test_automation   # rule matching and Gmail / Outlook translatio
 python -m tests.test_cleanup      # permissions, backups, cleanup, restore, rules
 python -m tests.test_server       # the local server's key, host and port checks
 python -m tests.test_safety       # changed emails, dropped connections, failed uploads
+python -m tests.test_parallel     # big cleanups on several connections, two Outlook accounts
+python -m tests.test_update       # the updater refuses a download that doesn't match the release
 ```
 
 To build the single-file versions:
@@ -181,4 +185,6 @@ pip install pyinstaller
 python build.py          # dist/FreeUpMail.pyz and dist/FreeUpMail(.exe)
 ```
 
-Publishing a GitHub release runs `.github/workflows/release.yml`. It runs the tests, builds the Windows, macOS and Linux versions, and attaches them to the release.
+Publishing a GitHub release runs `.github/workflows/release.yml`. It runs the tests, builds the Windows, macOS and Linux versions, and attaches them to the release. The release tag must match `__version__` in `freeupmail/__init__.py` (tag `v1.3.0` for `1.3.0`), or the build stops.
+
+The icons use a small cut-down copy of [Noto Color Emoji](https://github.com/googlefonts/noto-emoji) (SIL Open Font License, `freeupmail/web/fonts/OFL.txt`), so they look the same on every computer.

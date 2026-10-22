@@ -163,8 +163,7 @@ def address_list(db, account: str) -> str:
     return "\n".join(deleted_senders(db, account)) + "\n"
 
 
-def outlook_rules(db, log) -> None:
-    account = outlook.connected()["email"]
+def outlook_rules(db, account: str, log) -> None:
     perms.require(db, account, "server_rules")
     addrs = deleted_senders(db, account)
     words = protect_words(store.get_settings(db, rules.DEFAULT_SETTINGS))
@@ -177,5 +176,6 @@ def outlook_rules(db, log) -> None:
             o["exceptions"].setdefault("subjectContains", []).extend(words)
         own.append(o)
     log(f"== {account}: creating {len(own)} of your rules and rules for {len(addrs)} senders marked Delete")
-    outlook_write.apply_rules(addrs, protect_words(store.get_settings(db, rules.DEFAULT_SETTINGS)), log, own)
+    with outlook.use(account):
+        outlook_write.apply_rules(addrs, protect_words(store.get_settings(db, rules.DEFAULT_SETTINGS)), log, own)
     log("rules saved in Outlook (Settings -> Mail -> Rules, named 'Free(up)Mail N')")

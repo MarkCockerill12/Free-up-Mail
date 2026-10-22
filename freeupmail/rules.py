@@ -6,6 +6,7 @@ a false "security"/"receipt" match only means a junk mail survives.
 
 import re
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 
 SECURITY_RE = re.compile(
     r"security|verif|password|passcode|\b(sign(ed)?|log(ged)?)[ -]?(in|on)\b"
@@ -58,11 +59,13 @@ DEFAULT_SETTINGS = {
     "backup": "1",  # save a local copy of every email before it goes to Trash
     "backup_days": "0",  # delete backups older than this many days when the app starts (0 = keep)
     "auto_rules": "1",  # after each scan, run the rules marked "run automatically"
+    "check_updates": "1",  # ask GitHub for a newer release when the app opens
     "theme": "xp",  # xp | win10 | aero | minimal | dark
     "welcome_done": "0",
 }
 
 
+@lru_cache(maxsize=1 << 17)  # every list and plan classifies every email: the regexes are most of the time
 def classify(subject: str) -> str:
     """'security' / 'receipt' / 'shipping' / '' for one subject line."""
     if SECURITY_RE.search(subject):

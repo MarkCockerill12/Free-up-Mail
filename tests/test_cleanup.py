@@ -36,7 +36,7 @@ def setup():
     ms = FakeGraph({"o1": raw_email("o1@outlook"), "o2": raw_email("o2@outlook")})
     imapmail.login = lambda account: gm if account["email"] == GMAIL else ya
     imapmail.run_scan = lambda *a, **k: True
-    outlook.connected = lambda: {"email": OUTLOOK}
+    outlook.accounts = lambda: [OUTLOOK]
     outlook.graph, outlook.graph_raw = ms.graph, ms.graph_raw
     outlook.scan = lambda *a, **k: None
     store.load_config = lambda: {"imap": [{"email": GMAIL, "password": "x", "host": "imap.gmail.com"},

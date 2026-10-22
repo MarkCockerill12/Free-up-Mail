@@ -65,12 +65,11 @@ export async function accountsDialog(msg = "", code = null) {
     ? `<p>Open <a href="${esc(code.verification_uri)}" target="_blank" rel="noopener"><b>${esc(code.verification_uri)}</b></a>, enter this code and sign in:</p>
        <div class="code">${esc(code.user_code)}</div>
        <p class="note">Valid for 15 minutes. Free(up)Mail scans Outlook as soon as you approve (progress bottom-right).</p>`
-    : hasOutlook
-      ? `<p class="note">Connected — its permissions are in the table above. Reconnect only if a scan says the
-           sign-in expired (your permissions stay as they are).</p><button value="outlook">Reconnect Outlook</button>`
-      : `<p class="note">Signs in on Microsoft's own page; only a sign-in token is stored on this computer, never your password.</p>
-         <details open><summary>Permissions for this account</summary>${permChoices("ms", true)}</details>
-         <button value="outlook">Connect Outlook</button>`;
+    : `<p class="note">Signs in on Microsoft's own page; only a sign-in token is stored on this computer, never your password.
+         ${hasOutlook ? `To add <b>another</b> Outlook account, choose "Use another account" on Microsoft's page. Signing in
+         to one that's already here just refreshes it (if a scan says the sign-in expired) and keeps its permissions.` : ""}</p>
+       <details ${hasOutlook ? "" : "open"}><summary>Permissions for a new account</summary>${permChoices("ms", true)}</details>
+       <button value="outlook">${hasOutlook ? "Add or reconnect an Outlook account" : "Connect Outlook"}</button>`;
   const form = modal(`<h2>Accounts</h2>
     ${ui.accounts.length ? `<table><thead><tr><th>Account</th><th>Type</th><th class="num">Emails</th><th>Status</th><th>Scanned (UTC)</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>` : '<p class="note">No accounts yet. Add one below — Free(up)Mail talks to your provider directly from this computer.</p>'}
@@ -92,7 +91,7 @@ export async function accountsDialog(msg = "", code = null) {
   async (v, f) => {
     if (v === "outlook") {
       try {
-        const res = await api("/api/outlook/connect", hasOutlook ? {} : { perms: chosen(f, "ms") });
+        const res = await api("/api/outlook/connect", { perms: chosen(f, "ms") });
         ui.watchJob();
         accountsDialog("", res);
       } catch (e) { accountsDialog(e.message); }

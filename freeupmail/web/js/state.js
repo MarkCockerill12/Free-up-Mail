@@ -10,7 +10,7 @@ export const ui = {
   sort: { key: "count", dir: -1 },
   senders: [], groups: [], accounts: [], settings: {}, trashed: 0, plan: {}, permLabels: {}, backups: null, demo: false,
   emails: { items: [], total: 0, loading: false },
-  selected: new Set(), cursor: null, jobRunning: false,
+  selected: new Set(), cursor: null, anchor: null, jobRunning: false,
 };
 
 export const listeners = new Set();
@@ -126,10 +126,11 @@ const FREEMAIL = /^(gmail|googlemail|outlook|hotmail|live|msn|yahoo|icloud|me|ao
 
 /** Senders a decision applies to. Bulk/domain DELETE never sweeps up people you have
  *  emailed (deleting a single contact still works when chosen on its own). */
+/** A domain row stands for all its senders, so a Delete there leaves out people you've
+ *  emailed. Senders you picked yourself (rows, ticks, emails) are always changed. */
 export function membersFor(groups, action) {
-  const members = groups.flatMap((g) => g.members);
-  if (action !== "DELETE" || members.length === 1) return members;
-  return members.filter((m) => !m.is_contact);
+  return groups.flatMap((g) => (action === "DELETE" && g.members.length > 1
+    ? g.members.filter((m) => !m.is_contact) : g.members));
 }
 
 /** Confirmation text when a DELETE would hit a personal-mail domain such as gmail.com. */

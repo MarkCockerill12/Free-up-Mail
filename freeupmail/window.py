@@ -44,6 +44,12 @@ def run(url: str, bounds: tuple[int, int, int, int], storage: str, engine_args: 
     return True
 
 
+def close() -> None:
+    """Close the window (which stops the app), e.g. to restart into an update."""
+    if _window is not None:
+        _window.destroy()
+
+
 def bring_to_front() -> bool:
     """Called when Free(up)Mail is started again while already open."""
     if _window is None or not _ready.is_set():

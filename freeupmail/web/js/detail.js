@@ -33,7 +33,12 @@ const kindChips = (kinds) => Object.entries(kinds).filter(([, n]) => n)
 export async function decide(groups, action) {
   const warning = deleteWarning(groups, action);
   if (warning && !confirm(warning)) return false;
-  await setActions(membersFor(groups, action), action);
+  const members = membersFor(groups, action);
+  if (!members.length) {
+    toast("Everyone there is someone you've emailed, so a domain Delete skips them. Open a sender to delete just them.");
+    return false;
+  }
+  await setActions(members, action);
   return true;
 }
 
@@ -49,9 +54,9 @@ export async function showSender(g) {
       <div class="reason"><span class="pill ${g.action}">${ACTION_LABEL[g.action]}</span> ${esc([...g.reasons].join("; "))}
         ${g.contact ? '<span class="chip contact">contact</span>' : ""}</div>
       <div class="d-actions">
-        <button class="danger" data-act="DELETE">✖ Delete <kbd>D</kbd></button>
-        <button data-act="REVIEW">? Review <kbd>R</kbd></button>
-        <button class="good" data-act="KEEP">✔ Keep <kbd>K</kbd></button>
+        <button class="danger" data-act="DELETE">✖ Delete</button>
+        <button data-act="REVIEW">? Review</button>
+        <button class="good" data-act="KEEP">✔ Keep</button>
         <button class="link" data-act="AUTO">Reset</button>
         <button class="link" data-rule title="Move, archive, junk or always keep this sender's emails automatically">📋 Make a rule…</button>
         ${unsubLink(g.unsub_url)}

@@ -1,10 +1,18 @@
 /* Free(up)Mail — base layout and the Windows XP "Luna" theme. Every colour, border and font
    is a variable here; themes/*.css redefine them per theme (html[data-theme=...]).
    Email previews always stay light, whatever the theme. */
+/* The app's own emoji (Noto Color Emoji, SIL OFL: fonts/OFL.txt), cut down to the ones used here,
+   so icons look the same on every computer and none show as empty squares. Only these code points
+   use it; everything else falls through to the text font. Regenerate when the UI gains an emoji. */
+@font-face {
+  font-family: "FreeUpMail Emoji";
+  src: url("fonts/emoji.woff2") format("woff2");
+  unicode-range: U+2328, U+2699, U+26A0, U+2709, U+270B, U+2714, U+2716, U+1F389, U+1F393, U+1F3A8, U+1F3AD, U+1F449, U+1F44B, U+1F464, U+1F465, U+1F4BB, U+1F4BE, U+1F4C1, U+1F4CB, U+1F4CC, U+1F4CE, U+1F504, U+1F50E, U+1F512, U+1F5D1, U+1F6E1, U+1F9F9, U+1FA9F, U+FE0F, U+200D;
+}
 :root {
   color-scheme: light;
-  --font: 12px/1.4 Tahoma, "Segoe UI", Verdana, sans-serif;
-  --title-font: bold 13px "Trebuchet MS", Tahoma, sans-serif;
+  --font: 12px/1.4 "FreeUpMail Emoji", Tahoma, "Segoe UI", Verdana, sans-serif;
+  --title-font: bold 13px "FreeUpMail Emoji", "Trebuchet MS", Tahoma, sans-serif;
   --face: #ece9d8; --face-dark: #d6d2c2; --shadow: #aca899; --white: #ffffff; --hi: #ffffff;
   --text: #000000; --text-2: #333333; --muted: #5e5e5e; --link: #215dc6; --link-hover: #428eff; --h3: #0046d5;
   --select: #316ac5; --select-fg: #ffffff; --select-soft: #dce7fa; --field-border: #7f9db9; --field-bg: #ffffff;
@@ -158,7 +166,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--check); margin: 0 
 }
 .tb:hover:not(:disabled) { border-color: var(--tb-hover-line); background: var(--tb-hover-bg); }
 .tb:active:not(:disabled), .tb.on { background: var(--tb-on-bg); border-color: var(--shadow); }
-.tb .ico { font-size: 17px; line-height: 1; font-family: "Segoe UI Emoji", "Apple Color Emoji", sans-serif; }
+.tb .ico { font-size: 17px; line-height: 1; font-family: "FreeUpMail Emoji", sans-serif; }
 .tb:disabled .ico { filter: grayscale(1); opacity: .5; }
 .tb.help { font-weight: bold; min-width: 34px; justify-content: center; }
 .tb-sep { width: 1px; margin: 3px 3px; background: var(--shadow); box-shadow: 1px 0 var(--hi); }
@@ -343,6 +351,7 @@ legend { color: var(--h3); padding: 0 3px; }
 
 .joblog { position: fixed; right: 12px; bottom: 30px; width: 480px; max-width: calc(100vw - 24px); z-index: 30; }
 .joblog pre { margin: 6px; padding: 6px 8px; max-height: 200px; overflow: auto; background: var(--white); color: var(--text); border: 1px solid var(--field-border); font: 11px "Lucida Console", Consolas, monospace; white-space: pre-wrap; }
+pre.notes { max-height: 220px; overflow: auto; margin: 6px 0; padding: 6px 8px; background: var(--white); color: var(--text); border: 1px solid var(--field-border); font: inherit; white-space: pre-wrap; }
 
 .toast { position: fixed; right: 16px; bottom: 34px; background: var(--note-bg); color: var(--note-fg); border: 1px solid var(--text); border-radius: 6px; padding: 7px 10px; display: flex; gap: 10px; align-items: center; z-index: 60; box-shadow: 2px 2px 6px rgba(0,0,0,.3); }
 .toast button { min-height: 0; padding: 1px 8px; }
@@ -368,7 +377,7 @@ dialog.medium { width: 680px; }
 .welcome .lead { font-size: 14px; margin: 0 0 10px; }
 .welcome ul { margin: 6px 0 10px; padding-left: 0; list-style: none; }
 .welcome li { display: flex; gap: 10px; margin: 8px 0; align-items: flex-start; }
-.welcome li .ico { font-size: 20px; line-height: 1; width: 26px; text-align: center; font-family: "Segoe UI Emoji", sans-serif; }
+.welcome li .ico { font-size: 20px; line-height: 1; width: 26px; text-align: center; font-family: "FreeUpMail Emoji", sans-serif; }
 .theme-pick { display: flex; gap: 8px; flex-wrap: wrap; }
 .theme-pick button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 8px; min-width: 90px; }
 .theme-pick button .swatch { width: 60px; height: 34px; }

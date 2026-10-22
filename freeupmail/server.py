@@ -35,6 +35,7 @@ from . import (
     jobs,  # noqa: F401 - importing it adds its routes to api
     providers,
     store,
+    updater,
     window,
 )
 
@@ -47,7 +48,8 @@ WEBVIEW_DATA = store.APP_DIR / "window"  # the native window's own storage
 SESSION_PATH = store.APP_DIR / "session.json"
 TOKEN = secrets.token_urlsafe(24)
 CONTENT_TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css",
-                 ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png"}
+                 ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png",
+                 ".woff2": "font/woff2"}
 # Chromium browsers can open a page as a standalone app window.
 PROGRAM_DIRS = [os.environ.get(v, "") for v in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA")]
 BROWSERS = [
@@ -305,25 +307,32 @@ def open_window(url: str) -> subprocess.Popen | None:
     ])
 
 
-def wait_until_closed(window: subprocess.Popen | None, started: float) -> None:
+def wait_until_closed(window: subprocess.Popen | None, started: float) -> str:
+    """Block until the app window is gone; returns why, for the log."""
     heart = api.HEART
+    awake = tick = time.time()
     while True:
         time.sleep(2)
+        now = time.time()
+        if now - tick > 30:
+            awake = now  # the computer slept: give the page time to wake up and ping again
+        tick = now
+        if api.QUIT.is_set():
+            return "restarting for an update"
         if api.JOB.running:
             continue  # never stop in the middle of a scan or cleanup
-        now = time.time()
         if not heart.last_ping:
             if now - started > 120:
-                return  # window never connected
+                return "window never connected"
             continue
         if heart.last_bye > heart.last_ping and now - heart.last_bye > 5:
-            return  # page closed and nothing reconnected (a reload pings again at once)
-        # A minimised window may only ping once a minute; Edge can also linger in the
-        # background after its window closes, so a live process only extends the wait.
-        window_alive = window is not None and window.poll() is None
-        limit = 180 if window_alive else 15 if window is not None else 100
-        if now - heart.last_ping > limit:
-            return
+            return "window closed"  # and nothing reconnected (a reload pings again at once)
+        # A minimised or idle window can go quiet for many minutes (browsers throttle or
+        # freeze background pages), so while its browser runs only closing the page stops us.
+        if window is not None and window.poll() is None:
+            continue
+        if now - max(heart.last_ping, awake) > 600:
+            return "no window for 10 minutes"
 
 
 def _tidy_backups() -> None:
@@ -362,6 +371,8 @@ def main() -> None:
         return
     url = app_url(server.server_address[1], TOKEN)
     threading.Thread(target=_tidy_backups, daemon=True).start()
+    updater.remove_old_copy()
+    threading.Thread(target=lambda: (api.QUIT.wait(), server.shutdown()), daemon=True).start()
     store.write_private(SESSION_PATH, json.dumps({"port": server.server_address[1], "token": TOKEN, "pid": os.getpid()}))
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Free(up)Mail running on port {server.server_address[1]}", flush=True)
     try:
@@ -371,9 +382,10 @@ def main() -> None:
             if window.available() and window.run(url, bounds, str(WEBVIEW_DATA), " ".join(LEAN_ARGS)):
                 while api.JOB.running:  # closed mid-scan/cleanup: finish it quietly first
                     time.sleep(1)
+                why = "window closed"
             else:
-                wait_until_closed(open_window(url), time.time())
-            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} window closed, stopping", flush=True)
+                why = wait_until_closed(open_window(url), time.time())
+            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {why}, stopping", flush=True)
             server.shutdown()
             return
         print(f"Open {url}", flush=True)

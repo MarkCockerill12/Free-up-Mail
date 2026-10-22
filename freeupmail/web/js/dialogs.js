@@ -3,6 +3,7 @@ import { api, esc, fmt, sizeText, toast } from "./util.js";
 import { ui, loadState } from "./state.js";
 import { modal } from "./modal.js";
 import { showMenu } from "./menu.js";
+import { checkNow } from "./update.js";
 
 export function settingsDialog() {
   const s = ui.settings;
@@ -31,6 +32,9 @@ export function settingsDialog() {
     <h3>Rules</h3>
     <div class="row"><label>Run automatic rules after each scan</label><input type="checkbox" name="auto_rules" ${s.auto_rules === "1" ? "checked" : ""}>
       <span class="note">Only rules you marked "run automatically".</span></div>
+    <h3>Updates</h3>
+    <div class="row"><label>Check for a new version when it opens</label><input type="checkbox" name="check_updates" ${s.check_updates !== "0" ? "checked" : ""}>
+      <span class="note">Asks GitHub, where Free(up)Mail is published. Nothing about you or your email is sent.</span></div>
     <div class="foot"><button value="cancel">Cancel</button><button value="save" class="primary">Save</button></div>`,
   async (_, f) => {
     if (f.backup.checked === false && s.backup === "1"
@@ -43,6 +47,7 @@ export function settingsDialog() {
       keep_security: f.keep_security.value, keep_receipts: f.keep_receipts.checked ? "1" : "0",
       keep_shipping: f.keep_shipping.checked ? "1" : "0", backup: f.backup.checked ? "1" : "0",
       auto_rules: f.auto_rules.checked ? "1" : "0", backup_days: f.backup_days.value,
+      check_updates: f.check_updates.checked ? "1" : "0",
     });
     if (days) {
       const { deleted } = await api("/api/backups/prune", { days });
@@ -91,8 +96,12 @@ export async function cleanupDialog() {
 export function shortcutsDialog() {
   modal(`<h2>Keyboard shortcuts</h2>
     <div class="keys">
-      <kbd>↑</kbd><kbd>↓</kbd><span>Move through the list (opens the item on the right)</span>
+      <span><kbd>↑</kbd> <kbd>↓</kbd></span><span>Move through the list (opens the item on the right)</span>
       <kbd>X</kbd><span>Select / unselect the current row</span>
+      <span><kbd>Shift</kbd> + <kbd>↑</kbd> <kbd>↓</kbd></span><span>Select rows as you move</span>
+      <span><kbd>Shift</kbd> + click</span><span>Select every row between the last one clicked and this one</span>
+      <span><kbd>Ctrl</kbd> + click</span><span>Add / remove one row (or tick its box)</span>
+      <span><kbd>Ctrl</kbd> + <kbd>A</kbd></span><span>Select every row shown</span>
       <kbd>D</kbd><span>Delete sender (selected rows, or the current one)</span>
       <kbd>K</kbd><span>Keep sender</span>
       <kbd>R</kbd><span>Back to review</span>
@@ -116,7 +125,8 @@ export function privacyDialog() {
   modal(`<h2>Your privacy</h2>
     <p class="lead"><b>Everything runs on this computer.</b> There is no Free(up)Mail server, account, analytics or tracking.</p>
     <ul>
-      <li>Free(up)Mail connects straight from this computer to your email providers (Google, Microsoft, Yahoo…) and nowhere else.</li>
+      <li>Free(up)Mail connects straight from this computer to your email providers (Google, Microsoft, Yahoo…). The only other
+        place it contacts is GitHub, to check for a new version when it opens (you can turn that off under Protection & backups).</li>
       <li>Passwords, sign-ins, the email list and backups are stored only in <code>${esc(ui.dataFolder || "")}</code>.</li>
       <li>It only does what you allow per account under <b>Accounts → Permissions</b>, and checks that before every action.</li>
       <li>Nothing is ever permanently deleted: emails go to Trash, with a backup copy saved here first.</li>
@@ -135,5 +145,7 @@ export function helpMenu(anchor, startTour, showWelcome) {
     "-",
     { label: "Keyboard shortcuts", icon: "⌨️", run: shortcutsDialog },
     { label: "Privacy — what stays on this computer", icon: "🔒", run: privacyDialog },
+    "-",
+    { label: "Check for updates", icon: "🔄", run: checkNow },
   ]);
 }

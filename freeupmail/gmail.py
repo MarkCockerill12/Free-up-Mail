@@ -3,11 +3,15 @@ its categories (Promotions, Social...) and X-GM-MSGID ids, which survive moves."
 
 import imaplib
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from . import imapmail, imapwrite, store
 from .imapmail import BATCH, FLAGS_RE, UID_RE, Log, find_folder, search_uids, select
 
 HOST = imapmail.GOOGLE[0]
+TRASH_CONNECTIONS = 4  # Gmail allows 15 per account; each is throttled separately
+TRASH_PER_CONNECTION = 150  # smaller cleanups aren't worth the extra sign-ins
+TRASH_BATCH = 100  # backed up, then moved, per round (so progress shows early)
 MSGID_RE = re.compile(rb"X-GM-MSGID (\d+)")
 # Gmail's own classification, exposed through its search syntax.
 LABEL_QUERIES = {
@@ -88,15 +92,31 @@ def _confirmed(imap, items: dict[str, int], uids: list[str]) -> dict[str, str]:
 def trash(account: dict, items: dict[str, int], log: Log = print, keep=None, expected=None) -> dict[str, str]:
     """Move {msgid: uid} from All Mail to Trash. A message only moves when its X-GM-MSGID
     still matches the cached one and (with `keep`) its backup copy is saved.
-    Returns {msgid: msgid} for what moved, also when the connection drops part-way."""
-    imap = imapmail.login(account)
+    Returns {msgid: msgid} for what moved, also when a connection drops part-way.
+    Big cleanups run on several connections: Gmail throttles each one on its own."""
+    parts = min(TRASH_CONNECTIONS, -(-len(items) // TRASH_PER_CONNECTION))
+    if parts <= 1:
+        return _trash_part(account, items, log, keep)
+    pairs = list(items.items())
+    slices = [dict(pairs[n::parts]) for n in range(parts)]
+    with ThreadPoolExecutor(parts) as pool:
+        done = pool.map(lambda part: _trash_part(account, part, log, keep), slices)
+    return {k: v for part in done for k, v in part.items()}
+
+
+def _trash_part(account: dict, items: dict[str, int], log: Log, keep) -> dict[str, str]:
     moved: dict[str, str] = {}
+    try:  # never raise: the other connections' moves must still be recorded
+        imap = imapmail.login(account)
+    except (imaplib.IMAP4.error, OSError, RuntimeError) as exc:
+        log(f"  couldn't connect ({exc}); {len(items)} were left for next time")
+        return moved
     try:
         select(imap, find_folder(imap, b"\\All"))
         trash_folder = find_folder(imap, b"\\Trash")
         uids = [str(u) for u in items.values()]
-        for i in range(0, len(uids), BATCH):
-            confirmed = _confirmed(imap, items, uids[i : i + BATCH])
+        for i in range(0, len(uids), TRASH_BATCH):
+            confirmed = _confirmed(imap, items, uids[i : i + TRASH_BATCH])
             ok = imapwrite.backed_up(imap, [int(u) for u in confirmed], lambda u, c=confirmed: c[str(u)], keep, log)
             if ok:
                 imapwrite.move(imap, ok, trash_folder)

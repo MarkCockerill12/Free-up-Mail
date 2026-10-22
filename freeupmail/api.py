@@ -70,6 +70,7 @@ class Heartbeat:
 
 JOB = Job()
 HEART = Heartbeat()
+QUIT = threading.Event()  # set to stop the app (to restart into an update)
 
 
 def start(name: str, fn) -> dict:
@@ -110,7 +111,7 @@ def senders_list(_: dict) -> list:
 
 
 def plan(_: dict) -> dict:
-    return {acc: len(items) for acc, items in views.cleanup_plan(store.connect()).items()}
+    return views.plan_counts(store.connect())
 
 
 def message(query: dict) -> dict:
@@ -209,9 +210,9 @@ def add_account(body: dict) -> dict:
 
 def remove_account(body: dict) -> dict:
     db = store.connect()
-    if providers.outlook_email() == body["email"]:
-        from . import outlook
-        outlook.disconnect()
+    from . import outlook
+    if body["email"] in outlook.accounts():
+        outlook.disconnect(body["email"])
     else:
         config = store.load_config()
         config["imap"] = [a for a in config["imap"] if a["email"] != body["email"]]
@@ -289,6 +290,25 @@ def focus(_: dict) -> dict:
     return {"ok": window.bring_to_front()}
 
 
+def quit_app() -> None:
+    from . import window
+    QUIT.set()
+    window.close()
+
+
+def update_check(_: dict) -> dict:
+    from . import updater
+    try:
+        return updater.check()
+    except (OSError, ValueError) as exc:
+        return {"error": f"Couldn't reach GitHub to check for updates ({exc})."}
+
+
+def update_install(_: dict) -> dict:
+    from . import updater
+    return start("Update", lambda log: updater.install(log, quit_app))
+
+
 def ping(_: dict) -> dict:
     HEART.ping()
     return {"ok": True}
@@ -325,4 +345,6 @@ POST_ROUTES = {
     "/api/focus": focus,
     "/api/ping": ping,
     "/api/bye": bye,
+    "/api/update/check": update_check,
+    "/api/update/install": update_install,
 }

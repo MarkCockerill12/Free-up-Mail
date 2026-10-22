@@ -1,8 +1,8 @@
 /* Vista / Windows 7 "Frutiger Aero": sky-to-grass backdrop, frosted glass panes,
    glossy buttons and aqua selection. */
 html[data-theme=aero] {
-  --font: 12px/1.45 "Segoe UI", system-ui, sans-serif;
-  --title-font: 13px "Segoe UI", system-ui, sans-serif;
+  --font: 12px/1.45 "FreeUpMail Emoji", "Segoe UI", system-ui, sans-serif;
+  --title-font: 13px "FreeUpMail Emoji", "Segoe UI", system-ui, sans-serif;
   --face: rgba(236, 245, 252, .82); --face-dark: #c9dbea; --shadow: #a7c0d6; --white: #ffffff; --hi: rgba(255, 255, 255, .8);
   --text: #0b1f33; --text-2: #1e3348; --muted: #4f6a83; --link: #0b5fb0; --link-hover: #1a86e0; --h3: #11589c;
   --select: linear-gradient(180deg, #e3f1fd, #c3e0fb); --select-fg: #0b1f33; --select-soft: #e8f4fe; --field-border: #8fb0cc;

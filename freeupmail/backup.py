@@ -4,6 +4,7 @@ app (Outlook, Thunderbird, Apple Mail...) can also open these files directly."""
 
 import hashlib
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -32,6 +33,7 @@ def keeper(db, account: str):
         )
     }
     stamp = datetime.now(UTC).isoformat(timespec="seconds")
+    lock = threading.Lock()  # providers may back up from several connections at once
 
     def keep(msg_id: str, raw: bytes | None) -> bool:
         if not raw:
@@ -42,7 +44,7 @@ def keeper(db, account: str):
         tmp.write_bytes(raw)
         tmp.replace(path)  # never leave half-written files behind
         rfc_id, addr, name, subject, date, seen = meta.get(msg_id, ("", "", "", "", "", 1))
-        with db:
+        with lock, db:
             db.execute(
                 "INSERT OR REPLACE INTO backups VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (account, msg_id, str(path), rfc_id, addr, name, subject, date, seen, len(raw), stamp),

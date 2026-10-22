@@ -88,7 +88,7 @@ function wireInstall(form) {
          <b>Blocked senders</b> in its webmail settings. Your rules run inside Free(up)Mail after each scan instead.</p>`;
   };
   button.onclick = () => {
-    if (type() === "outlook") { $("#modal").close(); ui.startJob("/api/outlook/rules", {}); return; }
+    if (type() === "outlook") { $("#modal").close(); ui.startJob("/api/outlook/rules", { account: form.acct.value }); return; }
     location.href = withKey(`/api/filters?account=${encodeURIComponent(form.acct.value)}`);
   };
   form.acct.addEventListener("change", sync);

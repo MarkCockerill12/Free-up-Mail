@@ -30,6 +30,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Version matches the release
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          app=$(python -c "import freeupmail; print(freeupmail.__version__)")
+          [ "${tag#v}" = "$app" ] || { echo "release $tag but freeupmail/__init__.py says $app"; exit 1; }
       - name: Tests
         run: |
           python -m tests.test_rules
@@ -37,6 +44,8 @@ jobs:
           python -m tests.test_cleanup
           python -m tests.test_safety
           python -m tests.test_server
+          python -m tests.test_parallel
+          python -m tests.test_update
       - name: Build
         shell: bash
         run: |

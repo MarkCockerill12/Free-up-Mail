@@ -19,5 +19,8 @@ def run() -> None:
             shutil.rmtree(home, ignore_errors=True)
             from freeupmail import demo
             demo.create()
+    if "--after-update" in sys.argv:  # started by the copy it replaced: let that one close first
+        from freeupmail import server, updater
+        updater.wait_for_old_copy(server.already_running)
     from freeupmail.server import main
     main()

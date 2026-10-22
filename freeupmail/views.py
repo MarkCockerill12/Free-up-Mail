@@ -4,6 +4,7 @@ Every "will this be deleted?" answer goes through `_status`, so the GUI, the cou
 and the actual cleanup can never disagree.
 """
 
+import threading
 from datetime import UTC, datetime
 
 from . import automation, providers, rules, store
@@ -39,9 +40,34 @@ class Context:
         return any(automation.matches(r, row, self.now) for r in self.keep_rules)
 
 
+# Every list, total and plan starts from all the messages and the per-sender totals. They
+# only change when store.data_version does (or the hour turns: protection ages with time),
+# so they're kept here between requests. Treat what comes out as read-only.
+_cache: dict = {}
+_cache_lock = threading.RLock()
+
+
+def _cached(db, name: str, build):
+    key = (db.execute("PRAGMA database_list").fetchone()[2], db.execute("SELECT v FROM data_version").fetchone()[0],
+           datetime.now(UTC).strftime("%Y%m%d%H"))
+    with _cache_lock:  # concurrent requests wait for one build instead of each doing it
+        if _cache.get("key") != key:
+            _cache.clear()
+            _cache["key"] = key
+        if name not in _cache:
+            _cache[name] = build()
+        return _cache[name]
+
+
 def iter_rows(db, where: str = "", params: tuple = ()):
     """Messages as dicts with the extras matching needs: labels as a set, and the kind."""
-    for values in db.execute(f"{SELECT} {where} ORDER BY date DESC", params):
+    if not where:
+        return iter(_cached(db, "rows", lambda: list(_read_rows(db))))
+    return _read_rows(db, where, params)
+
+
+def _read_rows(db, where: str = "", params: tuple = ()):
+    for values in db.execute(f"{SELECT} {where} ORDER BY date DESC, msg_id", params):
         row = dict(zip(COLUMNS, values, strict=True))
         row["labels"] = set(row["labels"].split(",")) if row["labels"] else set()
         row["subject"] = row["subject"] or ""
@@ -61,10 +87,35 @@ def row_status(row: dict, action: str, ctx: Context) -> str:
     return _status(action, row["kind"], row["date"], row["labels"], protected, ctx)
 
 
-def senders(db, ctx: Context | None = None) -> list[dict]:
+def senders(db, ctx: Context | None = None, where: str = "", params: tuple = ()) -> list[dict]:
+    """Per-sender aggregates. Each sender's suggestion depends only on its own emails, so
+    `where` may narrow this to some accounts/senders without changing their answers."""
     ctx = ctx or Context(db)
+    base = _aggregate(db, ctx, where, params) if where else _cached(db, "senders", lambda: _aggregate(db, ctx))
+    result = []
+    for key, s in base.items():
+        override = ctx.overrides.get(key)
+        action = override or s["suggested"]
+        result.append({**s, "override": override, "action": action,
+                       "would_delete": s["deletable"] if action == "DELETE" else 0})
+    return result
+
+
+def plan_counts(db) -> dict[str, int]:
+    """{account: emails a cleanup would trash}: the same answers as cleanup_plan, from the
+    per-sender totals instead of a pass over every email."""
+    ctx = Context(db)
+    out: dict[str, int] = {}
+    for s in senders(db, ctx):
+        if s["would_delete"] and s["from_addr"] not in ctx.own:
+            out[s["account"]] = out.get(s["account"], 0) + s["would_delete"]
+    return out
+
+
+def _aggregate(db, ctx: Context, where: str = "", params: tuple = ()) -> dict[tuple[str, str], dict]:
+    """Per-sender totals and suggestion, biggest first, before your own Delete/Keep choices."""
     out: dict[tuple[str, str], dict] = {}
-    for row in iter_rows(db):
+    for row in iter_rows(db, where, params):
         account, addr, date = row["account"], row["from_addr"], row["date"]
         s = out.get((account, addr))
         if s is None:
@@ -94,18 +145,13 @@ def senders(db, ctx: Context | None = None) -> list[dict]:
         s["inbox"] += "inbox" in labels
         for cat in labels & CATS:
             s["cats"][cat] = s["cats"].get(cat, 0) + 1
-    result = []
-    for key, s in out.items():
+    for s in out.values():
         s["promo_social"] = sum(s["cats"].get(c, 0) for c in BULK_CATS) > s["count"] / 2
         # Outlook's non-Focused "Other" tab also holds transactional mail: only a hint.
         s["mostly_other"] = s["cats"].get("other", 0) > s["count"] / 2
         s["spammy"] = s["spam_hits"] * 2 >= s["count"]
         s["suggested"], s["reason"] = rules.suggest(s, ctx.own)
-        s["override"] = ctx.overrides.get(key)
-        s["action"] = s["override"] or s["suggested"]
-        s["would_delete"] = s["deletable"] if s["action"] == "DELETE" else 0
-        result.append(s)
-    return sorted(result, key=lambda r: -r["count"])
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]["count"]))
 
 
 def emails(db, params: dict) -> dict:
@@ -114,15 +160,24 @@ def emails(db, params: dict) -> dict:
     if params.get("status") == "trashed":
         return _trashed(db, params)
     ctx = Context(db)
-    actions = {(s["account"], s["from_addr"]): s["action"] for s in senders(db, ctx)}
     account, q = params.get("account") or "", (params.get("q") or "").lower()
     from_addrs = set(params.get("from_addrs") or [])
+    # Narrow in SQL first: one sender's emails shouldn't cost a pass over every mailbox.
+    clauses, args = [], []
+    if account:
+        clauses.append("account = ?")
+        args.append(account)
+    if 0 < len(from_addrs) <= 500:
+        clauses.append(f"from_addr IN ({', '.join('?' * len(from_addrs))})")
+        args += sorted(from_addrs)
+    where, args = (f"WHERE {' AND '.join(clauses)}" if clauses else ""), tuple(args)
+    actions = {(s["account"], s["from_addr"]): s["action"] for s in senders(db, ctx, where, args)}
     status_filter, kind_filter, cat = params.get("status") or "", params.get("kind") or "", params.get("cat") or ""
     connected = providers.accounts()
     items = []
     # Per-status totals for the current filters (ignoring the status filter itself).
     counts = {"all": 0, "pinned": 0, "unread": 0}
-    for row in iter_rows(db):
+    for row in iter_rows(db, where, args):
         acc, addr, name, subject = row["account"], row["from_addr"], row["from_name"], row["subject"]
         if account and acc != account:
             continue

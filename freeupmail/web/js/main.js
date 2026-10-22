@@ -1,6 +1,6 @@
 import { $, $$, KEY, api, debounce, esc, fmt, short, toast, withKey } from "./util.js";
 import {
-  ui, listeners, loadState, loadSenders, buildGroups, baseGroups, matchesStatus, planTotal, setActions, membersFor,
+  ui, listeners, loadState, loadSenders, buildGroups, baseGroups, matchesStatus, planTotal, setActions,
 } from "./state.js";
 import { sendersHead, renderSenders, senderStats } from "./senders.js";
 import { loadEmails, emailsHead, renderEmails, emailStats, emailKey } from "./emails.js";
@@ -14,6 +14,7 @@ import { welcome, startTour } from "./tour.js";
 import { initLayout, setPane } from "./layout.js";
 import { screenshot } from "./shots.js";
 import { applyColumns, initColumns } from "./columns.js";
+import { checkOnStart } from "./update.js";
 
 const narrow = () => window.innerWidth < 900;
 
@@ -99,7 +100,7 @@ ui.refresh = refresh;
 
 function resetList() {
   ui.selected.clear();
-  ui.cursor = null;
+  ui.cursor = ui.anchor = null;
   closeDetail();
   $("#list-wrap").scrollTop = 0;
 }
@@ -118,6 +119,19 @@ async function reloadList() {
 const keyOf = (item) => (ui.view === "senders" ? item.key : emailKey(item));
 const findVisible = (key) => (ui.visible || []).find((x) => keyOf(x) === key);
 
+/** Select (or unselect) every row from the anchor - the last row clicked - to `key`. */
+function selectRange(key, on = true) {
+  const list = ui.visible || [];
+  const to = list.findIndex((x) => keyOf(x) === key);
+  if (to < 0) return;
+  const from = list.findIndex((x) => keyOf(x) === ui.anchor);
+  const [lo, hi] = from < 0 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+  for (const item of list.slice(lo, hi + 1)) {
+    if (on) ui.selected.add(keyOf(item));
+    else ui.selected.delete(keyOf(item));
+  }
+}
+
 function targets() {
   const keys = ui.selected.size ? [...ui.selected] : ui.cursor ? [ui.cursor] : [];
   return keys.map(findVisible).filter(Boolean);
@@ -132,7 +146,7 @@ async function applyAction(action) {
   const items = targets();
   if (!items.length) return;
   if (ui.view === "senders") await decide(items, action);
-  else await setActions(action === "DELETE" ? membersFor([{ members: sendersOfEmails(items) }], action) : sendersOfEmails(items), action);
+  else await setActions(sendersOfEmails(items), action);
   if (ui.view === "emails") await loadEmails();
   render();
   reopenCursor();
@@ -163,8 +177,16 @@ function openItem(item) {
   if (narrow()) setPane("right", true);
   ui.cursor = keyOf(item);
   if (ui.view === "senders") showSender(item);
-  else showEmail(item);
+  else showEmail(item).then(() => prefetchAfter(item));
   $$("#list tbody tr").forEach((tr) => tr.classList.toggle("cursor", tr.dataset.key === ui.cursor));
+}
+
+/** Fetch the next email in the background (the server keeps it), so ↓ opens it at once. */
+function prefetchAfter(item) {
+  const list = ui.visible || [];
+  const next = list[list.indexOf(item) + 1];
+  if (ui.cursor !== keyOf(item) || !next?.msg_id || next.status === "trashed") return;
+  api(`/api/message?account=${encodeURIComponent(next.account)}&msg_id=${encodeURIComponent(next.msg_id)}`).catch(() => {});
 }
 
 function reopenCursor() {
@@ -283,18 +305,26 @@ function wire() {
     render();
   });
   const tbody = $("#list tbody");
+  tbody.addEventListener("mousedown", (ev) => {
+    if (ev.shiftKey && !ev.target.closest("select")) ev.preventDefault(); // shift-click picks rows, not text
+  });
+  // Like a file list: click opens a row, Ctrl+click (or its tick box) adds/removes it,
+  // Shift+click selects everything between it and the last row clicked.
   tbody.addEventListener("click", (ev) => {
     const tr = ev.target.closest("tr[data-key]");
-    if (!tr) return;
-    if (ev.target.classList.contains("pick")) {
-      if (ev.target.checked) ui.selected.add(tr.dataset.key);
-      else ui.selected.delete(tr.dataset.key);
-      tr.classList.toggle("picked", ev.target.checked);
-      render();
+    if (!tr || ev.target.closest("select")) return;
+    const key = tr.dataset.key;
+    const pick = ev.target.classList.contains("pick");
+    if (ev.shiftKey) selectRange(key, pick ? ev.target.checked : true);
+    else if (pick ? ev.target.checked : !ui.selected.has(key) && (ev.ctrlKey || ev.metaKey)) ui.selected.add(key);
+    else if (pick || ev.ctrlKey || ev.metaKey) ui.selected.delete(key);
+    else {
+      ui.anchor = key;
+      openItem(findVisible(key));
       return;
     }
-    if (ev.target.closest("select")) return;
-    openItem(findVisible(tr.dataset.key));
+    ui.anchor = key;
+    render();
   });
   tbody.addEventListener("dblclick", (ev) => {
     if (ev.target.closest("tr[data-key]") && !ev.target.closest("select, input")) setPane("right", true);
@@ -328,17 +358,36 @@ function wire() {
     render();
   });
 
+  // Shortcuts only stand aside for boxes you type into: a tick box or a dropdown you just
+  // used, or a click into an email preview, must not leave the keyboard dead.
+  document.addEventListener("change", (ev) => { if (ev.target.tagName === "SELECT") ev.target.blur(); });
+  window.addEventListener("blur", () => setTimeout(() => {
+    if (document.activeElement?.tagName === "IFRAME") document.activeElement.blur();
+  }));
   document.addEventListener("keydown", (ev) => {
-    if ($("#modal").open || !$("#review").hidden || ev.ctrlKey || ev.metaKey || ev.altKey) return;
-    if (ev.target.closest("input, select, textarea")) {
+    if ($("#modal").open || !$("#review").hidden || ev.altKey) return;
+    if (ev.target.closest("textarea, select, input:not([type=checkbox], [type=radio], [type=button])")) {
       if (ev.key === "Escape") ev.target.blur();
       return;
     }
-    const k = ev.key;
+    const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
+    if (ev.ctrlKey || ev.metaKey) {
+      if (k !== "a" || !ui.visible?.length) return;
+      ui.visible.forEach((item) => ui.selected.add(keyOf(item)));
+      render();
+      ev.preventDefault();
+      return;
+    }
     const actions = { d: "DELETE", k: "KEEP", r: "REVIEW", u: "AUTO" };
-    if (k === "ArrowDown") moveCursor(1);
-    else if (k === "ArrowUp") moveCursor(-1);
-    else if (actions[k.toLowerCase()] && ui.status !== "trashed") applyAction(actions[k.toLowerCase()]);
+    if (k === "ArrowDown" || k === "ArrowUp") {
+      const from = ui.cursor;
+      moveCursor(k === "ArrowDown" ? 1 : -1);
+      if (ev.shiftKey) {
+        ui.anchor = ui.anchor || from || ui.cursor;
+        selectRange(ui.cursor);
+        render();
+      } else ui.anchor = ui.cursor;
+    } else if (actions[k] && ui.status !== "trashed") applyAction(actions[k]);
     else if (k === "x" && ui.cursor) {
       if (ui.selected.has(ui.cursor)) ui.selected.delete(ui.cursor); else ui.selected.add(ui.cursor);
       render();
@@ -349,7 +398,7 @@ function wire() {
     else if (k === "z") toast.undo?.();
     else if (k === "/") $("#q").focus();
     else if (k === "?") helpMenu($("#btn-help"), () => startTour(), welcome);
-    else if (k === "Escape") { ui.selected.clear(); ui.cursor = null; closeDetail(); render(); }
+    else if (k === "Escape") { ui.selected.clear(); ui.cursor = ui.anchor = null; closeDetail(); render(); }
     else return;
     ev.preventDefault();
   });
@@ -390,6 +439,7 @@ async function init() {
   ping();
   syncTheme(st.settings);
   $("#demo-banner").hidden = !st.demo;
+  if (!st.demo) checkOnStart(st.settings);
   await loadSenders();
   render();
   if (st.job.running) { ui.jobRunning = true; watchJob(); }

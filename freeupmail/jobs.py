@@ -73,10 +73,10 @@ def outlook_connect(body: dict) -> dict:
     wanted = [p for p in body["perms"] if p in perms.PERMS] if "perms" in body else None
 
     def run(log):
-        if outlook.finish_sign_in(flow, log):
+        email = outlook.finish_sign_in(flow, log)
+        if email:
             db = store.connect()
-            email = providers.outlook_email()
-            if wanted is not None or not perms.granted(db, email):
+            if not perms.granted(db, email):  # signing in again to a known account keeps its permissions
                 perms.set_grants(db, email, list(perms.DEFAULT_NEW) if wanted is None else wanted)
             wanted_now = perms.granted(db, email)
             if "scan" in wanted_now:
@@ -86,13 +86,15 @@ def outlook_connect(body: dict) -> dict:
     return {"user_code": flow["user_code"], "verification_uri": flow["verification_uri"]}
 
 
-def outlook_rules(_: dict) -> dict:
-    if not outlook.connected():
-        return {"error": "Outlook is not connected"}
+def outlook_rules(body: dict) -> dict:
+    known = outlook.accounts()
+    account = body.get("account") or (known[0] if len(known) == 1 else "")
+    if account not in known:
+        return {"error": "That Outlook account is not connected"}
     db = store.connect()
-    if not perms.allowed(db, outlook.connected()["email"], "server_rules"):
+    if not perms.allowed(db, account, "server_rules"):
         return {"error": "Creating rules in Outlook is not allowed yet. Tick it under Accounts → Permissions."}
-    return api.start("Outlook rules", lambda log: filters.outlook_rules(db, log))
+    return api.start("Outlook rules", lambda log: filters.outlook_rules(db, account, log))
 
 
 ROUTES = {

@@ -97,7 +97,16 @@ CREATE TABLE IF NOT EXISTS backups (
 CREATE TABLE IF NOT EXISTS user_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, position INTEGER DEFAULT 0, data TEXT NOT NULL);
 -- Emails you restored, by Message-ID, so they stay protected even after their id changes.
 CREATE TABLE IF NOT EXISTS rescued (account TEXT NOT NULL, rfc_id TEXT NOT NULL, PRIMARY KEY (account, rfc_id));
+-- Counts changes to everything the per-sender totals are worked out from, so views.py can
+-- keep them in memory between requests (your Delete/Keep choices are applied on top).
+CREATE TABLE IF NOT EXISTS data_version (v INTEGER NOT NULL);
 """
+DERIVED_FROM = ("messages", "contacts", "pinned", "rescued", "user_rules", "settings")
+SCHEMA += "".join(
+    f"CREATE TRIGGER IF NOT EXISTS bump_{table}_{op.lower()} AFTER {op} ON {table}"
+    " BEGIN UPDATE data_version SET v = v + 1; END;\n"
+    for table in DERIVED_FROM for op in ("INSERT", "UPDATE", "DELETE")
+)
 MIGRATIONS = {"unsub_url": "TEXT DEFAULT ''", "rfc_id": "TEXT DEFAULT ''"}
 
 
@@ -131,11 +140,17 @@ def write_private(path: Path, text: str) -> None:
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+    # Write-ahead log: a commit costs one small sync instead of several (a cleanup commits
+    # once per backed-up email), and the window keeps reading while a job writes.
+    db.execute("PRAGMA journal_mode=WAL")
     db.executescript(SCHEMA)
     existing = {row[1] for row in db.execute("PRAGMA table_info(messages)")}
     for column, decl in MIGRATIONS.items():
         if column not in existing:
             db.execute(f"ALTER TABLE messages ADD COLUMN {column} {decl}")
+    if not db.execute("SELECT 1 FROM data_version").fetchone():
+        with db:
+            db.execute("INSERT INTO data_version VALUES (0)")
     if not db.execute("SELECT 1 FROM settings WHERE key = 'grants_migrated'").fetchone():
         # Accounts from before permissions existed keep what they were already doing:
         # listing and opening emails. Anything that changes a mailbox must be granted.

@@ -16,6 +16,7 @@ from .outlook import Log
 
 UPLOAD_ATTACHMENT_LIMIT = 3_000_000  # Graph takes attachments inline up to ~3 MB per request
 PARALLEL = 4  # Exchange allows 4 concurrent requests per mailbox
+TRASH_CHUNK = 100  # emails backed up before their move starts
 RULE_PREFIX = "Free(up)Mail"
 OLD_RULE_PREFIXES = (RULE_PREFIX, "Mail Tidy")  # rules from before the rename are replaced too
 RULE_CHUNK = 40
@@ -23,33 +24,39 @@ RULE_CHUNK = 40
 
 def _move_batch(msg_ids: list[str], destination: str, log: Log, verb: str) -> dict[str, str]:
     """Move messages 20 per Graph batch. Returns {old id: new id} for those moved, also
-    when the connection fails part-way. Requests Microsoft asks to slow down are retried."""
+    when the connection fails part-way."""
     moved: dict[str, str] = {}
     try:
-        for i in range(0, len(msg_ids), 20):
-            pending = msg_ids[i : i + 20]
-            for attempt in range(4):
-                requests = [{
-                    "id": str(n), "method": "POST", "url": f"/me/messages/{outlook._quote(mid)}/move",
-                    "body": {"destinationId": destination}, "headers": {"Content-Type": "application/json"},
-                } for n, mid in enumerate(pending)]
-                result = outlook.graph("POST", "/$batch", {"requests": requests})
-                retry = []
-                for resp in result.get("responses", []):
-                    mid = pending[int(resp["id"])]
-                    if resp.get("status") in (200, 201):
-                        moved[mid] = (resp.get("body") or {}).get("id", "")
-                    elif resp.get("status") in (429, 503, 504):
-                        retry.append(mid)
-                if not retry:
-                    break
-                pending = retry
-                time.sleep(2 * (attempt + 1))
-            if (i // 20) % 10 == 0 or i + 20 >= len(msg_ids):
-                log(f"  {verb} {len(moved)}/{len(msg_ids)}")
+        _move_all(msg_ids, destination, log, verb, moved)
     except (RuntimeError, OSError) as exc:
         log(f"  stopped early ({exc}); {len(moved)} were done and are recorded")
     return moved
+
+
+def _move_all(msg_ids: list[str], destination: str, log: Log, verb: str, moved: dict[str, str]) -> None:
+    """Fills `moved` {old id: new id} as it goes; raises if the connection fails. Requests
+    Microsoft asks to slow down are retried."""
+    for i in range(0, len(msg_ids), 20):
+        pending = msg_ids[i : i + 20]
+        for attempt in range(4):
+            requests = [{
+                "id": str(n), "method": "POST", "url": f"/me/messages/{outlook._quote(mid)}/move",
+                "body": {"destinationId": destination}, "headers": {"Content-Type": "application/json"},
+            } for n, mid in enumerate(pending)]
+            result = outlook.graph("POST", "/$batch", {"requests": requests})
+            retry = []
+            for resp in result.get("responses", []):
+                mid = pending[int(resp["id"])]
+                if resp.get("status") in (200, 201):
+                    moved[mid] = (resp.get("body") or {}).get("id", "")
+                elif resp.get("status") in (429, 503, 504):
+                    retry.append(mid)
+            if not retry:
+                break
+            pending = retry
+            time.sleep(2 * (attempt + 1))
+        if (i // 20) % 10 == 0 or i + 20 >= len(msg_ids):
+            log(f"  {verb} {len(moved)}/{len(msg_ids)}")
 
 
 def _mime(msg_id: str) -> bytes | None:
@@ -61,19 +68,33 @@ def _mime(msg_id: str) -> bytes | None:
 
 def trash(msg_ids: list[str], log: Log, keep=None) -> dict[str, str]:
     """Move to Deleted Items. With `keep` (see backup.keeper) each email's MIME source is
-    saved first and only the ones safely backed up are moved."""
-    if keep is not None:
-        ok: list[str] = []
-        with ThreadPoolExecutor(PARALLEL) as pool:
-            for n, (mid, raw) in enumerate(zip(msg_ids, pool.map(_mime, msg_ids), strict=True), 1):
-                if keep(mid, raw):
-                    ok.append(mid)
-                if n % 200 == 0:
-                    log(f"  backed up {len(ok)}/{len(msg_ids)}")
-        if len(ok) < len(msg_ids):
-            log(f"  {len(msg_ids) - len(ok)} could not be backed up, so they were left where they are")
-        msg_ids = ok
-    return _move_batch(msg_ids, "deleteditems", log, "moved to Deleted Items")
+    saved first and only the ones safely backed up are moved. Each chunk is moved while the
+    next one is being backed up."""
+    if keep is None:
+        return _move_batch(msg_ids, "deleteditems", log, "moved to Deleted Items")
+    moved: dict[str, str] = {}
+    missed = 0
+    fetch, move = outlook.bound(_mime), outlook.bound(_move_all)
+    # One request slot is left for the moves (Exchange allows PARALLEL per mailbox).
+    with ThreadPoolExecutor(PARALLEL - 1) as pool, ThreadPoolExecutor(1) as mover:
+        moving = None
+        try:
+            for i in range(0, len(msg_ids), TRASH_CHUNK):
+                chunk = msg_ids[i : i + TRASH_CHUNK]
+                ok = [mid for mid, raw in zip(chunk, pool.map(fetch, chunk), strict=True) if keep(mid, raw)]
+                missed += len(chunk) - len(ok)
+                if moving:
+                    moving.result()  # raises if the previous chunk's connection failed: stop there
+                moving = mover.submit(move, ok, "deleteditems", lambda _: None, "", moved)
+                log(f"  backed up {i + len(chunk) - missed}/{len(msg_ids)}, moved {len(moved)} to Deleted Items")
+            if moving:
+                moving.result()
+        except (RuntimeError, OSError) as exc:
+            log(f"  stopped early ({exc}); {len(moved)} were moved and are recorded")
+    if missed:
+        log(f"  {missed} could not be backed up, so they were left where they are")
+    log(f"  moved {len(moved)}/{len(msg_ids)} to Deleted Items")
+    return moved
 
 
 def _recipients(value: str | None) -> list[dict]:
