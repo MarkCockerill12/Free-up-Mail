@@ -6,7 +6,8 @@ import { modal } from "./modal.js";
 
 const FIELD_LABEL = {
   from: "Sender", domain: "Sender's domain", subject: "Subject", category: "Category", kind: "Type",
-  list: "Is a mailing list", unread: "Is unread", starred: "Is starred / flagged", inbox: "Is in the inbox", age: "Age",
+  list: "Is a mailing list", unread: "Is unread", starred: "Is starred / flagged", inbox: "Is in the inbox",
+  junk: "Is in Junk / Spam", junk_sender: "Sender has mail in Junk / Spam", age: "Age",
 };
 const OP_LABEL = {
   contains: "contains", not_contains: "doesn't contain", is: "is", starts: "starts with", ends: "ends with",
@@ -114,6 +115,37 @@ async function runRules(ids, what, rule = null) {
   } else if (!confirm(`Run ${what} on the emails in your mailboxes now? Accounts without the needed permission are skipped.`)) return;
   $("#modal").close();
   ui.startJob("/api/rules/run", { ids: ids || [] });
+}
+
+// ---------- junk senders ----------
+
+/** One click: bin everything from anyone with mail in Junk / Spam, now and after every scan. */
+export async function junkDialog() {
+  const j = await api("/api/junk");
+  if (!j.junk_emails) {
+    alert("No emails were found in your Junk / Spam folders at the last scan. Press Rescan to read them again.");
+    return;
+  }
+  const noTrash = ui.accounts.filter((a) => !a.perms.includes("trash")).map((a) => a.email);
+  modal(`<h2>Bin the senders in my Junk / Spam</h2>
+    <p><b>${fmt(j.junk_emails)}</b> emails sit in your Junk / Spam folders, sent by <b>${fmt(j.senders)}</b> senders.</p>
+    <p class="note">This makes the rule <b>"Junk folder senders"</b>: everything from those senders goes to Trash (each email is
+      backed up first), now and after every scan. It never touches people you've emailed, your own addresses, starred,
+      pinned or restored emails, or "always keep" rules. You can edit, turn off or delete it under <b>Rules</b>.</p>
+    <p><b>${fmt(j.would_trash)}</b> emails would be moved to Trash right now.</p>
+    <div class="row"><label>Also block these senders</label><input type="checkbox" name="block" checked>
+      <span class="note">Marks them <b>Delete</b>, so "Create rules in Outlook" or the Gmail filter file (under Rules) also stops
+      their future mail before it arrives. Senders you marked Keep are left alone.</span></div>
+    ${noTrash.length ? `<p class="warn">Not allowed to bin mail yet (Accounts → Permissions): ${esc(noTrash.join(", "))}</p>` : ""}
+    <div class="foot"><button value="cancel">Cancel</button>
+      <button value="rule">Only create the rule</button>
+      <button value="run" class="primary" ${j.would_trash ? "" : "disabled"}>Create the rule and clean up now</button></div>`,
+  async (action, f) => {
+    const made = await api("/api/junk/rule", { block: f.block.checked });
+    await ui.refresh();
+    toast(`Rule created${made.blocked ? `; ${fmt(made.blocked)} senders marked Delete` : ""}`);
+    if (action === "run") ui.startJob("/api/rules/run", { ids: [made.id] });
+  });
 }
 
 // ---------- editor ----------

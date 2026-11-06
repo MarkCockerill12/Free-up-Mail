@@ -28,7 +28,7 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = "offline_access User.Read Mail.ReadWrite MailboxSettings.ReadWrite"
 TOKENS_PATH = store.APP_DIR / "outlook_tokens.json"  # {email: sign-in token}, one per account
 OLD_TOKEN_PATH = store.APP_DIR / "outlook_token.json"  # from when only one account was possible
-SKIP_FOLDERS = ("deleteditems", "junkemail", "sentitems", "drafts", "outbox")
+SKIP_FOLDERS = ("deleteditems", "sentitems", "drafts", "outbox")  # and their subfolders; Junk IS scanned
 INLINE_IMAGE_LIMIT = 3_000_000
 CID_RE = re.compile(r"cid:([^\"'\s)>]+)", re.IGNORECASE)
 
@@ -194,6 +194,7 @@ def _fresh_token() -> str:
 
 def graph(method: str, path: str, body: dict | None = None) -> dict:
     url = path if path.startswith("https://") else GRAPH + path
+    last: Exception | None = None
     for _ in range(5):
         req = urllib.request.Request(
             url, json.dumps(body).encode() if body is not None else None, method=method,
@@ -208,6 +209,11 @@ def graph(method: str, path: str, body: dict | None = None) -> dict:
                 time.sleep(int(exc.headers.get("Retry-After", 5)))
                 continue
             raise RuntimeError(f"Graph {method} {path} -> {exc.code}: {exc.read()[:300]!r}") from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:  # a dropped connection: try again
+            last = exc
+            time.sleep(3)
+    if last:
+        raise RuntimeError(f"Graph {method} {path}: no connection ({last})") from last
     raise RuntimeError(f"Graph {method} {path}: throttled too long")
 
 
@@ -266,7 +272,13 @@ def scan(db, log: Log) -> None:
     log(f"sent mail: {len(counts)} people you have emailed")
     store.replace_contacts(db, account, counts)
 
-    skip = {fid for fid in map(_folder_id, SKIP_FOLDERS) if fid}
+    try:
+        folders = _folders()
+    except RuntimeError as exc:
+        log(f"couldn't list the folders ({exc}); scanning without the folder check")
+        folders = {}
+    skip = _with_children({fid for fid in map(_folder_id, SKIP_FOLDERS) if fid}, folders)
+    junk = _with_children({fid for fid in [_folder_id("junkemail")] if fid}, folders)
     inbox = _folder_id("inbox")
     rows = []
     select = "id,from,subject,receivedDateTime,isRead,parentFolderId,flag,inferenceClassification,internetMessageId"
@@ -277,6 +289,8 @@ def scan(db, log: Log) -> None:
         labels = []
         if msg.get("parentFolderId") == inbox:
             labels.append("inbox")
+        if msg.get("parentFolderId") in junk:
+            labels.append("junk")
         if (msg.get("flag") or {}).get("flagStatus") == "flagged":
             labels.append("starred")
         if msg.get("inferenceClassification") == "other":
@@ -290,10 +304,53 @@ def scan(db, log: Log) -> None:
         })
         if len(rows) % 2000 == 0:
             log(f"  {len(rows)} messages")
+    status = _verify(rows, folders, skip, log)
     _detect_mailing_lists(rows, log)
     store.replace_messages(db, account, rows)
-    store.record_scan(db, account, now, "ok")
+    store.record_scan(db, account, now, status)
     log(f"stored {len(rows)} messages")
+
+
+def _folders() -> dict[str, dict]:
+    """Every mail folder, hidden and nested ones too: {id: {name, parent, total}}."""
+    found: dict[str, dict] = {}
+
+    def walk(path: str, parent: str) -> None:
+        for folder in pages(f"{path}?$top=100&$select=id,displayName,totalItemCount,childFolderCount&includeHiddenFolders=true"):
+            found[folder["id"]] = {"name": folder.get("displayName", ""), "parent": parent,
+                                   "total": folder.get("totalItemCount") or 0}
+            if folder.get("childFolderCount"):
+                walk(f"/me/mailFolders/{_quote(folder['id'])}/childFolders", folder["id"])
+
+    walk("/me/mailFolders", "")
+    return found
+
+
+def _with_children(ids: set[str], folders: dict[str, dict]) -> set[str]:
+    """`ids` plus every folder inside them."""
+    result = set(ids)
+    grew = True
+    while grew:
+        grew = False
+        for fid, folder in folders.items():
+            if fid not in result and folder["parent"] in result:
+                result.add(fid)
+                grew = True
+    return result
+
+
+def _verify(rows: list[dict], folders: dict[str, dict], skip: set[str], log: Log) -> str:
+    """Compare what was read with the item counts Outlook reports for the scanned folders.
+    Returns the scan status: "ok", or "incomplete: ..." when emails are missing."""
+    if not folders:
+        return "ok"
+    expected = sum(f["total"] for fid, f in folders.items() if fid not in skip)
+    missing = expected - len(rows)
+    log(f"check: Outlook reports {expected} emails in the scanned folders, {len(rows)} were read")
+    if missing > max(5, expected // 100):  # mail arriving during the scan explains a few
+        log(f"WARNING: {missing} emails were not read; press Rescan to try again")
+        return f"incomplete: {missing} of {expected} emails not read"
+    return "ok"
 
 
 def _detect_mailing_lists(rows: list[dict], log: Log) -> None:
@@ -312,7 +369,12 @@ def _detect_mailing_lists(rows: list[dict], log: Log) -> None:
             "id": str(n), "method": "GET",
             "url": f"/me/messages/{_quote(r['msg_id'])}?$select=internetMessageHeaders",
         } for n, r in enumerate(chunk)]
-        for resp in graph("POST", "/$batch", {"requests": requests}).get("responses", []):
+        try:
+            responses = graph("POST", "/$batch", {"requests": requests}).get("responses", [])
+        except RuntimeError as exc:  # the mailing-list hint is a bonus: never lose the whole scan over it
+            log(f"  couldn't check some senders for mailing-list headers ({exc})")
+            continue
+        for resp in responses:
             if resp.get("status") != 200:
                 continue
             headers = (resp.get("body") or {}).get("internetMessageHeaders") or []

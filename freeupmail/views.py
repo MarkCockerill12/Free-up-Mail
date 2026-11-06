@@ -67,11 +67,13 @@ def iter_rows(db, where: str = "", params: tuple = ()):
 
 
 def _read_rows(db, where: str = "", params: tuple = ()):
+    junk_senders = set(db.execute("SELECT DISTINCT account, from_addr FROM messages WHERE labels LIKE '%junk%'"))
     for values in db.execute(f"{SELECT} {where} ORDER BY date DESC, msg_id", params):
         row = dict(zip(COLUMNS, values, strict=True))
         row["labels"] = set(row["labels"].split(",")) if row["labels"] else set()
         row["subject"] = row["subject"] or ""
         row["kind"] = rules.classify(row["subject"])
+        row["junk_sender"] = (row["account"], row["from_addr"]) in junk_senders
         yield row
 
 
@@ -79,6 +81,8 @@ def _status(action: str, kind: str, date: str, labels: set, pinned: bool, ctx: C
     if action != "DELETE":
         return action.lower()
     starred = "starred" in labels
+    if "junk" in labels:  # in the Junk folder: "looks like a receipt / security mail" no longer protects it
+        kind = ""
     return "protected" if rules.is_kept(kind, date, ctx.settings, starred, pinned) else "delete"
 
 
@@ -121,7 +125,7 @@ def _aggregate(db, ctx: Context, where: str = "", params: tuple = ()) -> dict[tu
         if s is None:
             s = out[(account, addr)] = {
                 "account": account, "from_addr": addr, "from_name": row["from_name"], "domain": row["from_domain"],
-                "count": 0, "unread": 0, "unsub": 0, "inbox": 0, "spam_hits": 0, "deletable": 0,
+                "count": 0, "unread": 0, "unsub": 0, "inbox": 0, "junk": 0, "spam_hits": 0, "deletable": 0,
                 "kinds": {"security": 0, "receipt": 0, "shipping": 0, "starred": 0, "pinned": 0, "rule": 0},
                 "cats": {}, "starred": False, "last_date": date[:10], "first_date": date[:10],
                 "sample_subject": row["subject"], "unsub_url": row["unsub_url"] or "",
@@ -143,6 +147,7 @@ def _aggregate(db, ctx: Context, where: str = "", params: tuple = ()) -> dict[tu
         s["deletable"] += _status("DELETE", kind, date, labels, pinned or by_rule, ctx) == "delete"
         s["starred"] |= "starred" in labels
         s["inbox"] += "inbox" in labels
+        s["junk"] += "junk" in labels
         for cat in labels & CATS:
             s["cats"][cat] = s["cats"].get(cat, 0) + 1
     for s in out.values():
@@ -191,6 +196,8 @@ def emails(db, params: dict) -> dict:
         if params.get("unread") and row["seen"]:
             continue
         if params.get("inbox") and "inbox" not in label_set:
+            continue
+        if params.get("junk") and "junk" not in label_set:
             continue
         if kind_filter and row["kind"] != kind_filter:
             continue
@@ -263,6 +270,8 @@ def rule_plan(db, rule: dict, ctx: Context | None = None) -> dict[str, dict[str,
         if row["from_addr"] in ctx.own or not automation.matches(rule, row, ctx.now):
             continue
         action = rule["action"]
+        if "junk" in row["labels"] and action != "trash":
+            continue  # mail already in Junk / Spam is only ever binned, never filed or flagged
         # Junk counts as binning: spam folders empty themselves (Gmail after 30 days).
         if action in ("trash", "junk") and (
                 row["from_addr"] in ctx.contacts or row_status(row, "DELETE", ctx) != "delete"):

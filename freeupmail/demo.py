@@ -70,8 +70,24 @@ def _rows() -> dict[str, list[dict]]:
                     "unsub_url": f"https://{addr.split('@')[1]}/unsubscribe" if is_list else "",
                     "rfc_id": f"demo-{uid}-{account}",
                 })
+    for account in (GMAIL, OUTLOOK):  # spam the provider's own filter already caught
+        for n, (name, addr, subject) in enumerate(JUNK):
+            uid = len(out[account]) + 1
+            when = now - timedelta(days=n * 2 + rnd.random() * 3)
+            out[account].append({
+                "account": account, "msg_id": f"demo-{uid}", "uid": uid, "from_addr": addr, "from_name": name,
+                "from_domain": addr.split("@")[1], "subject": subject, "date": when.isoformat(), "seen": 0,
+                "list_unsub": 0, "list_id": "", "labels": "junk", "unsub_url": "", "rfc_id": f"demo-{uid}-{account}",
+            })
     return out
 
+
+JUNK = [
+    ("Prize Centre", "winner@prize-centre.example", "You have been selected!!"),
+    ("Quick Loans", "offers@quickloans-now.example", "Cash in 5 minutes"),
+    ("Pharma Direct", "sales@pharmadirect.example", "Cheap meds, no prescription"),
+    ("Crypto Boost", "invest@cryptoboost.example", "Double your coins today"),
+]
 
 RULES = [
     {"name": "Receipts folder", "conditions": [{"field": "subject", "op": "contains", "value": "receipt"}],

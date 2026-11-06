@@ -2,11 +2,32 @@
 Outlook sign-in and Outlook server rules. Permissions are enforced again inside
 providers.Mailbox; the checks here only give a quicker, clearer answer."""
 
+from datetime import UTC, datetime, timedelta
+
 from . import api, cleanup, filters, outlook, perms, providers, store
+
+
+def _due(db, email: str, minutes: float) -> bool:
+    """Should an automatic scan read this account again? Not when it was read recently, and not
+    after a failed sign-in (retrying a wrong password every few minutes can lock the account)."""
+    row = db.execute("SELECT scanned_at, status FROM scans WHERE account = ?", (email,)).fetchone()
+    if not row:
+        return True
+    scanned_at, status = row
+    if status in ("login failed",) or "sign-in" in status:
+        return False
+    try:
+        when = datetime.fromisoformat(scanned_at)
+    except ValueError:
+        return True
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return datetime.now(UTC) - when >= timedelta(minutes=minutes)
 
 
 def scan(body: dict) -> dict:
     only = body.get("account")
+    stale = float(body.get("stale_minutes") or 0)  # automatic scans: only accounts older than this
 
     def run(log):
         db = store.connect()
@@ -16,13 +37,17 @@ def scan(body: dict) -> dict:
                 continue
             box = providers.Mailbox(db, email)
             if not box.can("scan"):
-                log(f"{email}: skipped - listing emails is not allowed for this account (Accounts → Permissions)")
+                if not stale:
+                    log(f"{email}: skipped - listing emails is not allowed for this account (Accounts → Permissions)")
+                continue
+            if stale and not _due(db, email, stale):
                 continue
             try:
                 if box.scan(log):
                     scanned.add(email)
             except Exception as exc:  # noqa: BLE001 - one account failing must not stop the others
                 log(f"{email}: scan failed ({exc}); the other accounts carry on")
+                store.record_scan_error(db, email, str(exc))
         if scanned and store.get_settings(db, {"auto_rules": "1"})["auto_rules"] == "1":
             cleanup.run_rules(None, log, accounts=scanned, auto_only=True)
 

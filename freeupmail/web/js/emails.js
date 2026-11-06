@@ -11,7 +11,7 @@ export async function loadEmails(reset = true) {
   ui.emails.loading = true;
   const res = await api("/api/emails", {
     account: ui.account, q: ui.q, status: ui.status === "all" ? "" : ui.status, cat: ui.cat,
-    unread: ui.unreadOnly, inbox: ui.inboxOnly, offset: reset ? 0 : ui.emails.items.length, limit: PAGE,
+    unread: ui.unreadOnly, inbox: ui.inboxOnly, junk: ui.junkOnly, offset: reset ? 0 : ui.emails.items.length, limit: PAGE,
   });
   if (mine !== token) return;
   ui.emails = {

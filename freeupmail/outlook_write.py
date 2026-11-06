@@ -36,6 +36,7 @@ def _move_batch(msg_ids: list[str], destination: str, log: Log, verb: str) -> di
 def _move_all(msg_ids: list[str], destination: str, log: Log, verb: str, moved: dict[str, str]) -> None:
     """Fills `moved` {old id: new id} as it goes; raises if the connection fails. Requests
     Microsoft asks to slow down are retried."""
+    failed: dict[int, int] = {}  # HTTP status -> how many emails Graph refused for it
     for i in range(0, len(msg_ids), 20):
         pending = msg_ids[i : i + 20]
         for attempt in range(4):
@@ -51,12 +52,18 @@ def _move_all(msg_ids: list[str], destination: str, log: Log, verb: str, moved: 
                     moved[mid] = (resp.get("body") or {}).get("id", "")
                 elif resp.get("status") in (429, 503, 504):
                     retry.append(mid)
+                else:
+                    failed[resp.get("status")] = failed.get(resp.get("status"), 0) + 1
             if not retry:
                 break
             pending = retry
             time.sleep(2 * (attempt + 1))
+        else:  # still throttled after every retry
+            failed[429] = failed.get(429, 0) + len(pending)
         if (i // 20) % 10 == 0 or i + 20 >= len(msg_ids):
             log(f"  {verb} {len(moved)}/{len(msg_ids)}")
+    if failed:
+        log("  not moved (left where they are): " + ", ".join(f"{n} refused with status {s}" for s, n in failed.items()))
 
 
 def _mime(msg_id: str) -> bytes | None:

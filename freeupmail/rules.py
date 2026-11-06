@@ -59,6 +59,7 @@ DEFAULT_SETTINGS = {
     "backup": "1",  # save a local copy of every email before it goes to Trash
     "backup_days": "0",  # delete backups older than this many days when the app starts (0 = keep)
     "auto_rules": "1",  # after each scan, run the rules marked "run automatically"
+    "auto_scan": "15",  # read the mailboxes again when they are this many minutes old (0 = only when asked)
     "check_updates": "1",  # ask GitHub for a newer release when the app opens
     "theme": "xp",  # xp | win10 | aero | minimal | dark
     "welcome_done": "0",
@@ -117,6 +118,8 @@ def suggest(sender: dict, own: set[str]) -> tuple[str, str]:
         return "KEEP", "you starred/flagged some"
     if PERSON_RELAY_RE.search(addr):
         return "KEEP", "relays mail from real people"
+    if sender.get("junk") and sender["junk"] * 2 >= sender["count"]:
+        return "DELETE", "already in your Junk / Spam folder"
     if sender["unsub"]:
         return "DELETE", "mailing list (has unsubscribe link)"
     if STRONG_BULK_ADDR_RE.search(addr):

@@ -6,7 +6,7 @@ export const ui = {
   status: "all",            // senders: all/DELETE/REVIEW/KEEP/MANUAL; emails: all/delete/protected/keep/review/pinned/trashed
   cat: "",
   group: "sender",          // sender | domain
-  q: "", unsubOnly: false, inboxOnly: false, unreadOnly: false, minCount: 1,
+  q: "", unsubOnly: false, inboxOnly: false, junkOnly: false, unreadOnly: false, minCount: 1,
   sort: { key: "count", dir: -1 },
   senders: [], groups: [], accounts: [], settings: {}, trashed: 0, plan: {}, permLabels: {}, backups: null, demo: false,
   emails: { items: [], total: 0, loading: false },
@@ -48,7 +48,7 @@ export function buildGroups() {
     let g = map.get(key);
     if (!g) {
       g = {
-        key, account: s.account, label, names: new Set(), members: [], count: 0, unread: 0, unsub: 0, inbox: 0,
+        key, account: s.account, label, names: new Set(), members: [], count: 0, unread: 0, unsub: 0, inbox: 0, junk: 0,
         would_delete: 0, kinds: { security: 0, receipt: 0, shipping: 0, starred: 0, pinned: 0 }, cats: {},
         actions: new Set(), manual: false, contact: false, reasons: new Set(), last_date: "", sample_subject: "",
         unsub_url: "", spammy: false,
@@ -57,7 +57,7 @@ export function buildGroups() {
     }
     if (s.from_name) g.names.add(s.from_name);
     g.members.push(s);
-    g.count += s.count; g.unread += s.unread; g.unsub += s.unsub; g.inbox += s.inbox;
+    g.count += s.count; g.unread += s.unread; g.unsub += s.unsub; g.inbox += s.inbox; g.junk += s.junk;
     g.would_delete += s.would_delete;
     for (const k in s.kinds) g.kinds[k] += s.kinds[k];
     for (const c in s.cats) g.cats[c] = (g.cats[c] || 0) + s.cats[c];
@@ -87,6 +87,7 @@ export function baseGroups() {
     if (ui.cat === "none" ? g.topCat : ui.cat && !g.cats[ui.cat]) return false;
     if (ui.unsubOnly && !g.unsub) return false;
     if (ui.inboxOnly && !g.inbox) return false;
+    if (ui.junkOnly && !g.junk) return false;
     if (q && !`${g.label} ${[...g.names].join(" ")} ${g.sample_subject}`.toLowerCase().includes(q)) return false;
     return true;
   });

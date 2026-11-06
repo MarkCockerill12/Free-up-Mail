@@ -35,10 +35,11 @@ The first time it runs, a welcome screen and a short guided tour show you around
 ## How it works
 
 1. **Connect your accounts** and choose what Free(up)Mail may do in each one. It starts by only listing your emails.
-2. **Rescan.** It reads the sender, subject and date of every email (not the contents) and groups them by sender.
+2. **Rescan.** It reads the sender, subject and date of every email (not the contents), Junk / Spam folders included, and groups them by sender. It checks the result against the counts your mail server reports, says when anything is missing, and re-reads by itself when the data gets old (every 15 minutes by default).
 3. **Decide.** Every sender gets a suggestion: **Delete** for mailing lists and marketing, **Keep** for people you've emailed, and **Review** for anything unclear. You can change any decision, or go through them one by one in **Review** mode.
 4. **Clean up.** Emails from senders marked Delete go to Trash. A copy of each one is saved on your computer first, so you can put any of them back later.
 5. **Rules.** Send future mail wherever you want, either automatically after each scan or installed directly in Gmail or Outlook.
+6. **Junk senders.** One button makes a rule that bins everyone who has mail in your Junk / Spam folders, and can mark them Delete so they are blocked in Gmail / Outlook too.
 
 | | |
 | --- | --- |
@@ -176,6 +177,7 @@ python -m tests.test_server       # the local server's key, host and port checks
 python -m tests.test_safety       # changed emails, dropped connections, failed uploads
 python -m tests.test_parallel     # big cleanups on several connections, two Outlook accounts
 python -m tests.test_update       # the updater refuses a download that doesn't match the release
+python -m tests.test_junk        # Junk / Spam scans, incomplete-scan checks, the junk-senders rule
 ```
 
 To build the single-file versions:
@@ -185,6 +187,6 @@ pip install pyinstaller
 python build.py          # dist/FreeUpMail.pyz and dist/FreeUpMail(.exe)
 ```
 
-Publishing a GitHub release runs `.github/workflows/release.yml`. It runs the tests, builds the Windows, macOS and Linux versions, and attaches them to the release. The release tag must match `__version__` in `freeupmail/__init__.py` (tag `v1.3.0` for `1.3.0`), or the build stops.
+Publishing a GitHub release runs `.github/workflows/release.yml`. It runs the tests, builds the Windows, macOS and Linux versions, and attaches them to the release. The release tag must match `__version__` in `freeupmail/__init__.py` (tag `v1.4.0` for `1.4.0`), or the build stops.
 
 The icons use a small cut-down copy of [Noto Color Emoji](https://github.com/googlefonts/noto-emoji) (SIL Open Font License, `freeupmail/web/fonts/OFL.txt`), so they look the same on every computer.

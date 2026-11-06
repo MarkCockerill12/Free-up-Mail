@@ -110,11 +110,18 @@ class Mailbox:
         rows = self.db.execute("SELECT msg_id, rfc_id FROM messages WHERE account = ?", (self.email,))
         return {m: r or "" for m, r in rows if m in items}
 
+    def _junk(self, items) -> set[str]:
+        """Ids among `items` that the last scan found in the Junk / Spam folder."""
+        rows = self.db.execute("SELECT msg_id, labels FROM messages WHERE account = ?", (self.email,))
+        return {m for m, labels in rows if m in items and "junk" in (labels or "").split(",")}
+
     def trash(self, items: dict[str, int], log, keep=None) -> dict[str, str]:
         """{msg_id: uid} to Trash; `keep` saves a backup of each first (needs "read")."""
         self._need("trash", *(("read",) if keep else ()))
         if self.kind == "outlook":
             return self._outlook(outlook_write.trash, list(items), log, keep)
+        if self.kind == "gmail":  # Spam is a folder of its own there, with its own uids
+            return gmail.trash(self.cfg, items, log, keep, self._expected(items), self._junk(items))
         return writer(self.cfg).trash(self.cfg, items, log, keep, self._expected(items))
 
     def restore(self, trash_ids: list[str], log) -> dict[str, str]:

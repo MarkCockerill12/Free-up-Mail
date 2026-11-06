@@ -54,6 +54,7 @@
         <button class="tb" id="btn-scan" title="Re-read the mailboxes"><span class="ico">🔄</span><span class="tb-text">Rescan</span></button>
         <span class="tb-sep"></span>
         <button class="tb" id="btn-rules" title="Your rules: send emails wherever you want, now and automatically"><span class="ico">📋</span><span class="tb-text">Rules</span></button>
+        <button class="tb" id="btn-junk" title="Bin, and block, everyone who has sent you mail that ended up in Junk / Spam"><span class="ico">🚫</span><span class="tb-text">Junk senders</span></button>
         <button class="tb" id="btn-settings" title="What is always kept, and backups"><span class="ico">🛡️</span><span class="tb-text">Protection</span></button>
         <button class="tb" id="btn-accounts" title="Add accounts and choose what Free(up)Mail may do"><span class="ico">👤</span><span class="tb-text">Accounts</span></button>
         <span class="tb-sep"></span>
@@ -63,6 +64,7 @@
         <button class="tb help" id="btn-help" title="Tutorial, keyboard shortcuts and privacy">?</button>
       </div>
       <div class="banner" id="update-banner" hidden></div>
+      <div class="banner" id="scan-banner" hidden></div>
       <div class="banner" id="demo-banner" hidden>🎭 <b>Demo mode</b> — these accounts and emails are made up. Nothing real is read or changed.</div>
       <div class="addressbar">
         <label class="lbl" for="q">Search</label>
@@ -74,6 +76,7 @@
         </span>
         <label id="lbl-unsub"><input type="checkbox" id="unsub-only"> Mailing lists only</label>
         <label><input type="checkbox" id="inbox-only"> Still in inbox</label>
+        <label><input type="checkbox" id="junk-only"> In Junk / Spam</label>
         <label id="lbl-unread" hidden><input type="checkbox" id="unread-only"> Unread only</label>
         <label id="lbl-min">At least&nbsp;<input type="number" id="min" value="1" min="1">&nbsp;emails</label>
       </div>

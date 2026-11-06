@@ -19,7 +19,7 @@ def _fetch_reply(uids, box, what, extra=lambda u: ""):
         if "BODY.PEEK[]" in what:
             out += [(f"1 (UID {u} BODY[] {{99}}".encode(), box[u]["raw"]), b")"]
         elif "MESSAGE-ID" in what:
-            out += [(f"1 (UID {u} FLAGS () BODY[HEADER.FIELDS (MESSAGE-ID)] {{40}}".encode(),
+            out += [(f"1 ({extra(u)}UID {u} FLAGS () BODY[HEADER.FIELDS (MESSAGE-ID)] {{40}}".encode(),
                      f"Message-ID: <{box[u]['rfc']}>\r\n\r\n".encode()), b")"]
         else:
             out.append(f"1 ({extra(u)}UID {u})".encode())

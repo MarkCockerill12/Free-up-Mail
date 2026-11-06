@@ -187,6 +187,14 @@ def record_scan(db: sqlite3.Connection, account: str, scanned_at: str, status: s
         db.execute("INSERT OR REPLACE INTO scans VALUES (?, ?, ?)", (account, scanned_at, status))
 
 
+def record_scan_error(db: sqlite3.Connection, account: str, message: str) -> None:
+    """A scan failed: keep the time of the last good one (that is how old the data is) and say why."""
+    status = "error: " + " ".join(message.split())[:160]
+    with db:
+        if db.execute("UPDATE scans SET status = ? WHERE account = ?", (status, account)).rowcount == 0:
+            db.execute("INSERT INTO scans VALUES (?, '', ?)", (account, status))
+
+
 def get_settings(db: sqlite3.Connection, defaults: dict) -> dict:
     stored = dict(db.execute("SELECT key, value FROM settings"))
     return {k: stored.get(k, v) for k, v in defaults.items()}

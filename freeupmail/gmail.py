@@ -25,7 +25,23 @@ LABEL_QUERIES = {
 }
 
 
-def scan_messages(imap, db, account: str, log: Log) -> None:
+def _rows_of(imap, uids: list, account: str, labels_of, log: Log) -> tuple[list[dict], int]:
+    """Message rows for these uids in the selected folder, and how many could not be read."""
+    got, problems = imapmail.fetch_complete(imap, uids, imapmail.HEADER_FIELDS, log, "X-GM-MSGID ")
+    rows = []
+    for meta, raw in got:
+        uid, msgid = UID_RE.search(meta), MSGID_RE.search(meta)
+        if not msgid:
+            problems += 1
+            continue
+        flags = FLAGS_RE.search(meta)
+        rows.append(imapmail.message_row(account, msgid[1].decode(), int(uid[1]), flags[1] if flags else b"",
+                                         raw, labels_of(uid[1])))
+    return rows, problems
+
+
+def scan_messages(imap, db, account: str, log: Log) -> int:
+    """All Mail (everything but Trash and Spam), then the Spam folder, labelled "junk"."""
     select(imap, find_folder(imap, b"\\All"), readonly=True)
     uids = search_uids(imap, "ALL")
     log(f"all mail: {len(uids)} messages")
@@ -33,17 +49,28 @@ def scan_messages(imap, db, account: str, log: Log) -> None:
     for label, query in LABEL_QUERIES.items():
         for uid in search_uids(imap, "X-GM-RAW", f'"{query}"'):
             labels.setdefault(uid, []).append(label)
+    rows, problems = _rows_of(imap, uids, account, lambda uid: labels.get(uid, []), log)
 
-    rows = []
-    for meta, raw in imapmail.fetch_headers(imap, uids, imapmail.HEADER_FIELDS, log, "X-GM-MSGID "):
-        uid, msgid = UID_RE.search(meta), MSGID_RE.search(meta)
-        if not (uid and msgid):
-            continue
-        flags = FLAGS_RE.search(meta)
-        rows.append(imapmail.message_row(account, msgid[1].decode(), int(uid[1]), flags[1] if flags else b"",
-                                         raw, labels.get(uid[1], [])))
+    spam = find_folder(imap, b"\\Junk", required=False)
+    if not spam:
+        log("no Spam folder is visible over IMAP, so spam is not scanned")
+    else:
+        try:
+            select(imap, spam, readonly=True)
+        except RuntimeError as exc:
+            log(f"skip {exc}")
+            problems += 1
+        else:
+            spam_uids = search_uids(imap, "ALL")
+            log(f"spam: {len(spam_uids)} messages")
+            junk, missing = _rows_of(imap, spam_uids, account, lambda _: ["junk"], log)
+            rows += junk
+            problems += missing
+    if problems and not rows:
+        raise RuntimeError("nothing could be read, so the earlier results were kept")
     store.replace_messages(db, account, rows)
-    log(f"stored {len(rows)} messages")
+    log(f"stored {len(rows)} messages" + (f" ({problems} could not be read)" if problems else ""))
+    return problems
 
 
 def scan_account(account: dict, db, log: Log = print) -> bool:
@@ -89,22 +116,33 @@ def _confirmed(imap, items: dict[str, int], uids: list[str]) -> dict[str, str]:
     return {u: m for u, m in _msgids(imap, uids).items() if items.get(m) == int(u)}
 
 
-def trash(account: dict, items: dict[str, int], log: Log = print, keep=None, expected=None) -> dict[str, str]:
-    """Move {msgid: uid} from All Mail to Trash. A message only moves when its X-GM-MSGID
-    still matches the cached one and (with `keep`) its backup copy is saved.
-    Returns {msgid: msgid} for what moved, also when a connection drops part-way.
-    Big cleanups run on several connections: Gmail throttles each one on its own."""
+def trash(account: dict, items: dict[str, int], log: Log = print, keep=None, expected=None,
+          junk: frozenset | set = frozenset()) -> dict[str, str]:
+    """Move {msgid: uid} to Trash: from All Mail, or from Spam for the ids in `junk` (their
+    uids belong to the Spam folder). A message only moves when its X-GM-MSGID still matches
+    the cached one and (with `keep`) its backup copy is saved.
+    Returns {msgid: msgid} for what moved, also when a connection drops part-way."""
+    moved: dict[str, str] = {}
+    for source, part in ((b"\\All", {m: u for m, u in items.items() if m not in junk}),
+                         (b"\\Junk", {m: u for m, u in items.items() if m in junk})):
+        if part:
+            moved.update(_trash_split(account, part, log, keep, source))
+    return moved
+
+
+def _trash_split(account: dict, items: dict[str, int], log: Log, keep, source: bytes) -> dict[str, str]:
+    """Big cleanups run on several connections: Gmail throttles each one on its own."""
     parts = min(TRASH_CONNECTIONS, -(-len(items) // TRASH_PER_CONNECTION))
     if parts <= 1:
-        return _trash_part(account, items, log, keep)
+        return _trash_part(account, items, log, keep, source)
     pairs = list(items.items())
     slices = [dict(pairs[n::parts]) for n in range(parts)]
     with ThreadPoolExecutor(parts) as pool:
-        done = pool.map(lambda part: _trash_part(account, part, log, keep), slices)
+        done = pool.map(lambda part: _trash_part(account, part, log, keep, source), slices)
     return {k: v for part in done for k, v in part.items()}
 
 
-def _trash_part(account: dict, items: dict[str, int], log: Log, keep) -> dict[str, str]:
+def _trash_part(account: dict, items: dict[str, int], log: Log, keep, source: bytes = b"\\All") -> dict[str, str]:
     moved: dict[str, str] = {}
     try:  # never raise: the other connections' moves must still be recorded
         imap = imapmail.login(account)
@@ -112,7 +150,7 @@ def _trash_part(account: dict, items: dict[str, int], log: Log, keep) -> dict[st
         log(f"  couldn't connect ({exc}); {len(items)} were left for next time")
         return moved
     try:
-        select(imap, find_folder(imap, b"\\All"))
+        select(imap, find_folder(imap, source))
         trash_folder = find_folder(imap, b"\\Trash")
         uids = [str(u) for u in items.values()]
         for i in range(0, len(uids), TRASH_BATCH):

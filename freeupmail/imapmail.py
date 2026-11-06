@@ -169,6 +169,22 @@ def mail_folders(imap: imaplib.IMAP4) -> list[str]:
             if name not in skip and not any(f in flags for f in SKIP_FLAGS)]
 
 
+def scan_folders(imap: imaplib.IMAP4) -> list[tuple[str, bool]]:
+    """(folder, is_junk) for every folder a scan reads: the mail folders plus the Junk folder."""
+    folders = list_folders(imap)
+    junk = _role(folders, b"\\Junk")
+    skip = {_role(folders, flag) for flag in ROLE_NAMES}
+    unusable = (b"\\Noselect", b"\\NonExistent")
+    out = []
+    for flags, name in folders:
+        if name == junk:
+            if not any(f in flags for f in unusable):
+                out.append((name, True))
+        elif name not in skip and not any(f in flags for f in SKIP_FLAGS):
+            out.append((name, False))
+    return out
+
+
 def search_uids(imap: imaplib.IMAP4, *criteria: str) -> list[bytes]:
     _, data = imap.uid("SEARCH", *criteria)
     return data[0].split() if data and data[0] else []
@@ -184,6 +200,24 @@ def fetch_headers(imap: imaplib.IMAP4, uids: list, fields: str, log: Log, extra:
                 nxt = data[j + 1] if j + 1 < len(data) else b""
                 yield item[0] + (nxt if isinstance(nxt, bytes) else b""), item[1]
         log(f"  {min(i + BATCH, len(uids))}/{len(uids)}")
+
+
+def fetch_complete(imap: imaplib.IMAP4, uids: list, fields: str, log: Log, extra: str = "") -> tuple[list, int]:
+    """[(meta, header)] for every uid. Whatever the server leaves out is asked for once more;
+    the second value is how many never came, so a scan can say it is incomplete."""
+    got: dict[int, tuple[bytes, bytes]] = {}
+    todo = list(uids)
+    for attempt in range(2):
+        for meta, raw in fetch_headers(imap, todo, fields, log, extra):
+            found = UID_RE.search(meta)
+            if found:
+                got[int(found[1])] = (meta, raw)
+        todo = [u for u in uids if int(u) not in got]
+        if not todo:
+            break
+        if attempt == 0:
+            log(f"  {len(todo)} were not returned, asking again")
+    return list(got.values()), len(todo)
 
 
 def message_ids(imap: imaplib.IMAP4, uids: list) -> dict[int, str]:
@@ -240,27 +274,32 @@ def scan_contacts(imap, db, account: str, log: Log) -> None:
     store.replace_contacts(db, account, counts)
 
 
-def scan_messages(imap, db, account: str, log: Log) -> None:
-    rows = []
-    for folder in mail_folders(imap):
+def scan_messages(imap, db, account: str, log: Log) -> int:
+    """Read every folder (Junk included, labelled "junk"). Returns how many emails could not be read."""
+    rows, problems = [], 0
+    for folder, junk in scan_folders(imap):
         try:
             validity = select(imap, folder, readonly=True)
         except RuntimeError as exc:
             log(f"skip {exc}")
+            problems += 1
             continue
         uids = search_uids(imap, "ALL")
         log(f"{folder}: {len(uids)} messages")
         inbox = folder.upper() == "INBOX"
-        for meta, raw in fetch_headers(imap, uids, HEADER_FIELDS, log):
+        got, missing = fetch_complete(imap, uids, HEADER_FIELDS, log)
+        problems += missing
+        for meta, raw in got:
             uid = UID_RE.search(meta)
-            if not uid:
-                continue
             flags = FLAGS_RE.search(meta)
             flags = flags[1] if flags else b""
-            labels = (["inbox"] if inbox else []) + (["starred"] if b"\\Flagged" in flags else [])
+            labels = (["inbox"] if inbox else []) + (["junk"] if junk else []) + (["starred"] if b"\\Flagged" in flags else [])
             rows.append(message_row(account, make_id(validity, int(uid[1]), folder), int(uid[1]), flags, raw, labels))
+    if problems and not rows:
+        raise RuntimeError("no folder could be read, so the earlier results were kept")
     store.replace_messages(db, account, rows)
-    log(f"stored {len(rows)} messages")
+    log(f"stored {len(rows)} messages" + (f" ({problems} could not be read)" if problems else ""))
+    return problems
 
 
 def run_scan(account: dict, db, log: Log, scan_fn) -> bool:
@@ -274,10 +313,10 @@ def run_scan(account: dict, db, log: Log, scan_fn) -> bool:
         return False
     try:
         scan_contacts(imap, db, account["email"], log)
-        scan_fn(imap, db, account["email"], log)
+        problems = scan_fn(imap, db, account["email"], log) or 0
     finally:
         imap.logout()
-    store.record_scan(db, account["email"], now, "ok")
+    store.record_scan(db, account["email"], now, "ok" if not problems else f"incomplete: {problems} emails not read")
     return True
 
 

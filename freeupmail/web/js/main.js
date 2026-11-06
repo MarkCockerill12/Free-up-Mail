@@ -8,7 +8,7 @@ import { showSender, showEmail, closeDetail, decide } from "./detail.js";
 import { openReview } from "./review.js";
 import { settingsDialog, cleanupDialog, helpMenu } from "./dialogs.js";
 import { accountsDialog } from "./accounts.js";
-import { rulesDialog } from "./rules.js";
+import { rulesDialog, junkDialog } from "./rules.js";
 import { syncTheme, themeMenu } from "./theme.js";
 import { welcome, startTour } from "./tour.js";
 import { initLayout, setPane } from "./layout.js";
@@ -47,8 +47,38 @@ function render() {
   $("#btn-cleanup").disabled = !total || ui.jobRunning;
   $("#btn-scan").disabled = ui.jobRunning;
   renderBulk();
+  renderScanBanner();
 }
 listeners.add(render);
+
+/** Say so when an account's last scan failed or was incomplete: the lists show its older data. */
+function renderScanBanner() {
+  const bad = ui.accounts.filter((a) => !a.demo && a.status !== "ok" && a.status !== "not scanned");
+  const banner = $("#scan-banner");
+  banner.hidden = !bad.length;
+  if (!bad.length) return;
+  const when = (a) => (a.scanned_at ? `last read ${a.scanned_at.slice(0, 16).replace("T", " ")}` : "never read");
+  banner.innerHTML = `⚠ <span><b>Some mail may be missing or out of date.</b> ${bad.map((a) =>
+    `${esc(short(a.email))}: ${esc(a.status)} (${when(a)})`).join(" · ")}</span>
+    <button type="button" data-rescan ${ui.jobRunning ? "disabled" : ""}>Rescan</button>
+    <button type="button" data-accounts>Accounts</button>`;
+}
+
+// ---------- automatic scans ----------
+
+let lastAutoScan = 0;
+const accountDue = (a, minutes) => !a.demo && a.perms.includes("scan") && a.status !== "login failed"
+  && !a.status.includes("sign-in") && (!a.scanned_at || Date.now() - Date.parse(a.scanned_at) >= minutes * 60000);
+
+/** Read accounts again once they are older than the "read automatically" setting (at most once per interval). */
+function autoScan() {
+  const minutes = Number(ui.settings.auto_scan ?? 15);
+  if (!minutes || ui.demo || ui.jobRunning || document.hidden || $("#modal").open) return;
+  if (Date.now() - lastAutoScan < minutes * 60000) return;
+  if (!ui.accounts.some((a) => accountDue(a, minutes))) return;
+  lastAutoScan = Date.now();
+  startJob("/api/scan", { stale_minutes: minutes });
+}
 
 function navButton(attr, value, label, on, extra = "") {
   return `<button data-${attr}="${esc(value)}" class="${on ? "on" : ""}">${label}${extra}</button>`;
@@ -268,6 +298,11 @@ function wire() {
   });
   $("#btn-settings").onclick = settingsDialog;
   $("#btn-rules").onclick = () => rulesDialog();
+  $("#btn-junk").onclick = () => junkDialog().catch((e) => alert(e.message));
+  $("#scan-banner").addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-rescan]")) startJob("/api/scan", {});
+    if (ev.target.closest("[data-accounts]")) accountsDialog();
+  });
   $("#btn-accounts").onclick = () => accountsDialog();
   $("#btn-theme").onclick = () => themeMenu($("#btn-theme"));
   $("#btn-help").onclick = () => helpMenu($("#btn-help"), () => startTour(), welcome);
@@ -282,6 +317,7 @@ function wire() {
   $("#unsub-only").addEventListener("change", (e) => { ui.unsubOnly = e.target.checked; render(); });
   $("#inbox-only").addEventListener("change", async (e) => { ui.inboxOnly = e.target.checked; await reloadList(); });
   $("#unread-only").addEventListener("change", async (e) => { ui.unreadOnly = e.target.checked; await reloadList(); });
+  $("#junk-only").addEventListener("change", async (e) => { ui.junkOnly = e.target.checked; await reloadList(); });
   $("#group").addEventListener("change", (ev) => {
     ui.group = ev.target.value;
     ui.groups = buildGroups();
@@ -413,7 +449,8 @@ function wire() {
   });
 
   setInterval(ping, 10000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { ping(); autoScan(); } });
+  setInterval(autoScan, 60000);
   window.addEventListener("pagehide", () => navigator.sendBeacon(withKey("/api/bye"), "{}"));
 }
 
@@ -443,6 +480,7 @@ async function init() {
   await loadSenders();
   render();
   if (st.job.running) { ui.jobRunning = true; watchJob(); }
+  else autoScan();
   const shot = new URLSearchParams(location.search).get("shot");
   if (shot && st.demo) await screenshot(shot, { openItem, reloadList });
   else if (st.settings.welcome_done !== "1") welcome();

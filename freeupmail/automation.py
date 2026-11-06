@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 FIELDS = {
     "from": "text", "domain": "text", "subject": "text",
     "category": "choice", "kind": "choice",
-    "list": "flag", "unread": "flag", "starred": "flag", "inbox": "flag",
+    "list": "flag", "unread": "flag", "starred": "flag", "inbox": "flag", "junk": "flag", "junk_sender": "flag",
     "age": "days",
 }
 OPS = {
@@ -105,7 +105,9 @@ def _flag(field: str, row: dict) -> bool:
         return bool(row["list_unsub"])
     if field == "unread":
         return not row["seen"]
-    return field in row["labels"]  # starred / inbox
+    if field == "junk_sender":  # has mail in a Junk / Spam folder (views.py works that out per scan)
+        return bool(row.get("junk_sender"))
+    return field in row["labels"]  # starred / inbox / junk
 
 
 def _age_days(date: str, now: datetime) -> float | None:

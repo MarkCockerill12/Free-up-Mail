@@ -33,6 +33,7 @@ from . import (
     backup,
     filters,
     jobs,  # noqa: F401 - importing it adds its routes to api
+    junk,  # noqa: F401 - so does this one (the junk-senders rule)
     providers,
     store,
     updater,

@@ -11,6 +11,8 @@ export function settingsDialog() {
   const opt = (v, label) => `<option value="${v}" ${s.keep_security === v ? "selected" : ""}>${label}</option>`;
   const keepFor = [["0", "Forever"], ["30", "30 days"], ["90", "90 days"], ["180", "6 months"], ["365", "1 year"]]
     .map(([v, label]) => `<option value="${v}" ${(s.backup_days || "0") === v ? "selected" : ""}>${label}</option>`).join("");
+  const scanEvery = [["0", "Only when I press Rescan"], ["5", "After 5 minutes"], ["15", "After 15 minutes"], ["30", "After 30 minutes"], ["60", "After an hour"]]
+    .map(([v, label]) => `<option value="${v}" ${(s.auto_scan ?? "15") === v ? "selected" : ""}>${label}</option>`).join("");
   modal(`<h2>Protection & backups</h2>
     <p class="note">When a sender is marked <b>Delete</b>, these emails from them are still kept.
       Starred/flagged emails, emails you pin or restore, "always keep" rules and anyone you've ever emailed are always kept.</p>
@@ -29,6 +31,10 @@ export function settingsDialog() {
     <p class="note">To put emails back, open <b>Deleted (restorable)</b> in the sidebar, select them and press
       <b>Restore</b>. Ones still in Trash are moved back; the rest are uploaded from these backups.
       <button type="button" class="link" data-show-deleted>Show deleted emails</button></p>
+    <h3>Reading your mailboxes</h3>
+    <div class="row"><label>Read them again automatically</label><select name="auto_scan">${scanEvery}</select>
+      <span class="note">When Free(up)Mail opens, and while it stays open, any account last read longer ago than this is
+      scanned again (Junk / Spam folders included). Rescan always reads everything.</span></div>
     <h3>Rules</h3>
     <div class="row"><label>Run automatic rules after each scan</label><input type="checkbox" name="auto_rules" ${s.auto_rules === "1" ? "checked" : ""}>
       <span class="note">Only rules you marked "run automatically".</span></div>
@@ -47,7 +53,7 @@ export function settingsDialog() {
       keep_security: f.keep_security.value, keep_receipts: f.keep_receipts.checked ? "1" : "0",
       keep_shipping: f.keep_shipping.checked ? "1" : "0", backup: f.backup.checked ? "1" : "0",
       auto_rules: f.auto_rules.checked ? "1" : "0", backup_days: f.backup_days.value,
-      check_updates: f.check_updates.checked ? "1" : "0",
+      check_updates: f.check_updates.checked ? "1" : "0", auto_scan: f.auto_scan.value,
     });
     if (days) {
       const { deleted } = await api("/api/backups/prune", { days });

@@ -46,6 +46,7 @@ jobs:
           python -m tests.test_server
           python -m tests.test_parallel
           python -m tests.test_update
+          python -m tests.test_junk
       - name: Build
         shell: bash
         run: |
